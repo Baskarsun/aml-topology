@@ -2,3 +2,5 @@ networkx
 pandas
 matplotlib
 numpy
+six
+torch

@@ -3,6 +3,7 @@ from src.simulator import TransactionSimulator
 from src.graph_analyzer import AMLGraphAnalyzer
 from src.csr_cycle_detector import build_csr, detect_cycles_csr
 from src.visualizer import plot_graph
+from src.behavioral_detector import BehavioralDetector
 
 def main():
     print("=== AML Graph Analysis Engine ===")
@@ -34,6 +35,39 @@ def main():
     # 2. Analysis Phase
     print("\n[2] Analyzing Graph Topology...")
     analyzer = AMLGraphAnalyzer(df)
+    # --- Cyber-behavioral analysis demo (synthetic) ---
+    print("\n[2.1] Cyber-behavioral heuristics demo...")
+    detector = BehavioralDetector()
+
+    # Create simple synthetic login events for demo purposes
+    login_events = [
+        # Pre-compromise: many failures from same subnet
+        {'user_id': 'ACC_0010', 'timestamp': sim.start_time + 10, 'success': False, 'ip': '1.2.3.1', 'subnet': '1.2.3.0/24', 'user_agent': 'UA-1', 'time_to_login': 0.5},
+        {'user_id': 'ACC_0010', 'timestamp': sim.start_time + 15, 'success': False, 'ip': '1.2.3.2', 'subnet': '1.2.3.0/24', 'user_agent': 'UA-1', 'time_to_login': 0.6},
+        {'user_id': 'ACC_0010', 'timestamp': sim.start_time + 20, 'success': False, 'ip': '1.2.3.3', 'subnet': '1.2.3.0/24', 'user_agent': 'UA-1', 'time_to_login': 0.4},
+        {'user_id': 'ACC_0010', 'timestamp': sim.start_time + 25, 'success': True,  'ip': '5.6.7.8',   'subnet': '5.6.7.0/24', 'user_agent': 'UA-1', 'time_to_login': 0.3, 'new_device': True},
+        # Impossible travel example (far apart)
+        {'user_id': 'ACC_0025', 'timestamp': sim.start_time + 100, 'success': True, 'ip': '8.8.8.8', 'lat': 51.5074, 'lon': -0.1278, 'user_agent': 'UA-2', 'time_to_login': 2.0},
+        {'user_id': 'ACC_0025', 'timestamp': sim.start_time + 1000, 'success': True,'ip': '9.9.9.9', 'lat': 35.6895, 'lon': 139.6917, 'user_agent': 'UA-3', 'time_to_login': 2.5}
+    ]
+
+    logins_df = pd.DataFrame(login_events)
+
+    cs_flags = detector.detect_credential_stuffing(logins_df, window_seconds=60, fail_ratio_threshold=0.6, min_attempts=3)
+    bf_flags = detector.detect_bruteforce_and_new_device(logins_df)
+    it_flags = detector.detect_impossible_travel(logins_df, velocity_kmph_threshold=1000.0)
+
+    if cs_flags:
+        for f in cs_flags:
+            print(f"CYBER ALERT: {f}")
+    if bf_flags:
+        for f in bf_flags:
+            print(f"CYBER ALERT: {f}")
+    if it_flags:
+        for f in it_flags:
+            print(f"CYBER ALERT: {f}")
+    if not (cs_flags or bf_flags or it_flags):
+        print("No immediate cyber behavioral alerts from demo data.")
     
     # Detect Patterns
     print("\n--- Detecting Fan-In (Structuring) ---")
