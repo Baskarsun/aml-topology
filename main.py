@@ -4,6 +4,7 @@ from src.graph_analyzer import AMLGraphAnalyzer
 from src.csr_cycle_detector import build_csr, detect_cycles_csr
 from src.visualizer import plot_graph
 from src.behavioral_detector import BehavioralDetector
+from src.temporal_predictor import TemporalPredictor, SequenceAnalyzer
 
 def main():
     print("=== AML Graph Analysis Engine ===")
@@ -106,10 +107,85 @@ def main():
     for node, score in bridges[:3]:
         print(f"Node {node}: Score {score:.4f}")
 
-    # 3. Visualization Phase
-    print("\n[3] Generating Visualization...")
+    # 3. TEMPORAL PREDICTION PHASE (Predictive Subsystem)
+    print("\n[3] Temporal & Predictive Analysis...")
+    temporal_pred = TemporalPredictor(lookback_days=30, forecast_days=7)
+    
+    print("\n[3.1] Establishing temporal baselines for all accounts...")
+    baselines = temporal_pred.establish_baselines(df)
+    print(f"Baseline established for {len(baselines)} accounts.")
+    
+    print("\n[3.2] Detecting transaction volume acceleration patterns...")
+    volume_alerts = temporal_pred.detect_volume_acceleration(df, threshold_sigma=2.5)
+    if volume_alerts:
+        for alert in volume_alerts:
+            print(f"PREDICTIVE ALERT: Account {alert['account']} showing {alert['acceleration_rate']:.1%} volume acceleration")
+            suspicious_set.add(alert['account'])
+    else:
+        print("No volume acceleration patterns detected.")
+    
+    print("\n[3.3] Detecting behavioral shifts...")
+    behavior_alerts = temporal_pred.detect_behavioral_shift(df, deviation_threshold=2.0)
+    if behavior_alerts:
+        for alert in behavior_alerts:
+            print(f"PREDICTIVE ALERT: Account {alert['account']} shows significant behavioral shift")
+            suspicious_set.add(alert['account'])
+    else:
+        print("No behavioral shifts detected.")
+    
+    print("\n[3.4] Forecasting risk escalation (multi-signal analysis)...")
+    risk_predictions = temporal_pred.forecast_risk_escalation(df, early_warning_threshold=0.6)
+    if risk_predictions:
+        for pred in risk_predictions:
+            print(f"PREDICTIVE ALERT: Account {pred['account']} has {pred['predicted_risk_probability']:.1%} predicted risk of escalation")
+            print(f"  Risk signals: {', '.join(pred['risk_signals'])}")
+            suspicious_set.add(pred['account'])
+    else:
+        print("No risk escalation predictions.")
+    
+    print("\n[3.5] Detecting temporal concentration of transactions...")
+    temporal_bursts = temporal_pred.detect_temporal_concentration(df, min_transactions=4, time_window_hours=24)
+    if temporal_bursts:
+        for burst in temporal_bursts:
+            print(f"PREDICTIVE ALERT: Account {burst['account']} shows {burst['concentration_pct']:.0f}% temporal concentration")
+            suspicious_set.add(burst['account'])
+    else:
+        print("No temporal concentration patterns detected.")
+    
+    print("\n[3.6] Predicting cycle emergence...")
+    cycle_predictions = temporal_pred.predict_cycle_emergence(df, min_chain_length=3)
+    if cycle_predictions:
+        for pred in cycle_predictions:
+            print(f"PREDICTIVE ALERT: Account {pred['account']} likely to form cycles ({pred['predicted_cycle_probability']:.1%} probability)")
+            suspicious_set.add(pred['account'])
+    else:
+        print("No cycle emergence predictions.")
+    
+    print("\n[3.7] Analyzing transaction sequences for structuring...")
+    sequence_analyzer = SequenceAnalyzer()
+    structuring_seqs = sequence_analyzer.detect_structuring_sequence(df, threshold_amount=10000, just_below_threshold=9000)
+    if structuring_seqs:
+        for seq in structuring_seqs:
+            print(f"PREDICTIVE ALERT: Account {seq['account']} shows structuring sequence ({seq['transaction_count']} txs)")
+            suspicious_set.add(seq['account'])
+    else:
+        print("No structuring sequences detected.")
+    
+    print("\n[3.8] Generating temporal forecast summary...")
+    forecast_report = temporal_pred.forecast_account_summary(df, include_all_detections=False)
+    print(f"\nTemporal Forecast Summary:")
+    print(f"  Total flagged accounts: {forecast_report['detection_summary']['total_flagged_accounts']}")
+    print(f"  Risk escalation predictions: {forecast_report['detection_summary']['risk_escalation_predictions']}")
+    print(f"  Temporal concentration alerts: {forecast_report['detection_summary']['temporal_concentration_alerts']}")
+    if forecast_report['highest_risk_accounts']:
+        print(f"\n  Top 5 highest temporal risk accounts:")
+        for acc in forecast_report['highest_risk_accounts'][:5]:
+            print(f"    - {acc['account']}: Risk Score {acc['temporal_risk_score']:.1f} ({len(acc['signals'])} signals)")
+
+    # 4. Visualization Phase
+    print("\n[4] Generating Visualization...")
     if suspicious_set:
-        print(f"Highlighting {len(suspicious_set)} suspicious nodes.")
+        print(f"Highlighting {len(suspicious_set)} suspicious nodes (spatial + temporal).")
     plot_graph(analyzer.G, suspicious_nodes=list(suspicious_set), filename="aml_network_graph.png")
 
     print("\nDone.")

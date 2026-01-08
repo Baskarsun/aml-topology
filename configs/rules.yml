@@ -1,0 +1,38 @@
+## Example RULE_CONFIG for neuro-symbolic constraints
+## Each rule: enabled: true/false, weight: positive float
+
+fan_in_smurf:
+  enabled: true
+  weight: 1.0
+
+mule_hub:
+  enabled: true
+  weight: 1.0
+
+new_device_high_amount:
+  enabled: true
+  weight: 1.2
+
+impossible_travel:
+  enabled: false
+  weight: 1.0
+
+device_ip_entropy:
+  enabled: true
+  weight: 0.8
+
+rapid_outgoing_spike:
+  enabled: true
+  weight: 0.9
+
+recurring_tester_tx:
+  enabled: true
+  weight: 0.6
+
+app_payee_mismatch:
+  enabled: true
+  weight: 1.0
+
+synthetic_identity_burst:
+  enabled: true
+  weight: 0.7
