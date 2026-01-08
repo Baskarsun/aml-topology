@@ -1,10 +1,13 @@
 import pandas as pd
+import numpy as np
 from src.simulator import TransactionSimulator
 from src.graph_analyzer import AMLGraphAnalyzer
 from src.csr_cycle_detector import build_csr, detect_cycles_csr
 from src.visualizer import plot_graph
 from src.behavioral_detector import BehavioralDetector
 from src.temporal_predictor import TemporalPredictor, SequenceAnalyzer
+from src.embedding_builder import build_time_series_node_embeddings, build_pair_sequences_for_pairs
+from src.lstm_link_predictor import LSTMLinkPredictor, train_model, predict_proba
 
 def main():
     print("=== AML Graph Analysis Engine ===")
@@ -186,6 +189,87 @@ def main():
     print("\n[4] Generating Visualization...")
     if suspicious_set:
         print(f"Highlighting {len(suspicious_set)} suspicious nodes (spatial + temporal).")
+    plot_graph(analyzer.G, suspicious_nodes=list(suspicious_set), filename="aml_network_graph.png")
+
+    # 5. LSTM LINK PREDICTION PHASE (Predictive ML)
+    print("\n[5] LSTM Link Prediction for Emerging Links...")
+    try:
+        print("\n[5.1] Building time-series node embeddings...")
+        fraud_scores = {node: (1.0 if node in suspicious_set else 0.0) for node in analyzer.G.nodes()}
+        emb_map, feature_names = build_time_series_node_embeddings(df, freq='12H', fraud_scores=fraud_scores)
+        print(f"Built embeddings for {len(emb_map)} nodes; feature dimension={len(feature_names)}")
+        
+        # Generate candidate pairs from suspicious nodes (link prediction focus)
+        if suspicious_set and len(suspicious_set) > 1:
+            print(f"\n[5.2] Generating candidate pairs for suspicious nodes...")
+            pair_candidates = []
+            susp_list = list(suspicious_set)
+            # Sample edges: suspicious-to-suspicious and suspicious-to-others
+            for i, node_u in enumerate(susp_list):
+                for node_v in susp_list[i+1:]:
+                    pair_candidates.append((node_u, node_v))
+                # Also sample some suspicious-to-other nodes
+                others = [n for n in analyzer.G.nodes() if n not in suspicious_set]
+                sampled_others = np.random.choice(others, min(5, len(others)), replace=False) if others else []
+                for node_v in sampled_others:
+                    pair_candidates.append((node_u, node_v))
+            
+            if pair_candidates:
+                print(f"Generated {len(pair_candidates)} candidate pairs for link prediction.")
+                
+                print("\n[5.3] Building pair sequences (with zero-padding for young nodes)...")
+                sequences, valid_pairs = build_pair_sequences_for_pairs(
+                    emb_map, pair_candidates, seq_len=3, allow_padding=True
+                )
+                print(f"Built {len(valid_pairs)} valid sequences (padded).")
+                
+                if len(valid_pairs) > 0:
+                    # Create synthetic labels: 1 if link already exists in graph
+                    labels = np.array([
+                        float(analyzer.G.has_edge(u, v) or analyzer.G.has_edge(v, u))
+                        for u, v in valid_pairs
+                    ], dtype=np.float32)
+                    
+                    # Ensure some class balance for training
+                    if len(np.unique(labels)) < 2:
+                        n = len(labels)
+                        k = max(1, int(0.2 * n))
+                        inds = np.random.choice(n, k, replace=False)
+                        labels[inds] = 1 - labels[inds]
+                    
+                    print(f"Labels: {int((labels==1).sum())} positive, {int((labels==0).sum())} negative")
+                    
+                    print("\n[5.4] Training LSTM link predictor...")
+                    input_size = sequences.shape[2]
+                    model = LSTMLinkPredictor(input_size=input_size, hidden_size=64, num_layers=1, dropout=0.1)
+                    model, history = train_model(
+                        model, sequences, labels, epochs=15, batch_size=32, lr=1e-3, use_class_weight=True
+                    )
+                    
+                    print("\n[5.5] Predicting emerging links...")
+                    predictions = predict_proba(model, sequences)
+                    emerging_links = [
+                        (valid_pairs[i], predictions[i])
+                        for i in np.argsort(predictions)[::-1][:10]  # Top 10
+                    ]
+                    
+                    print("\nTop 10 Predicted Emerging Suspicious Links:")
+                    for (u, v), score in emerging_links:
+                        print(f"  {u} -> {v}: {score:.3f} (link formation probability)")
+                        suspicious_set.add(u)
+                        suspicious_set.add(v)
+                else:
+                    print("Insufficient sequences for LSTM training.")
+            else:
+                print("Not enough suspicious nodes for pair generation.")
+        else:
+            print("Insufficient suspicious nodes detected for link prediction phase.")
+    except Exception as e:
+        print(f"LSTM phase skipped (optional): {e}")
+
+    print("\n[4] Generating Visualization...")
+    if suspicious_set:
+        print(f"Highlighting {len(suspicious_set)} suspicious nodes (spatial + temporal + LSTM).")
     plot_graph(analyzer.G, suspicious_nodes=list(suspicious_set), filename="aml_network_graph.png")
 
     print("\nDone.")
