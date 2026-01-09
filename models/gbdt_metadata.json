@@ -1,0 +1,42 @@
+{
+  "library": "lightgbm",
+  "timestamp": 1767971296.4213548,
+  "feature_count": 11,
+  "feature_names": [
+    "amt_log",
+    "mcc_enc",
+    "payment_type_enc",
+    "device_change",
+    "ip_risk",
+    "count_1h",
+    "sum_24h",
+    "uniq_payees_24h",
+    "is_international",
+    "avg_tx_24h",
+    "velocity_score"
+  ],
+  "metrics": {
+    "accuracy": 0.9285178705323669,
+    "precision": 0.0574712643674858,
+    "recall": 0.07575757575700184,
+    "auc": 0.524961426094555
+  },
+  "maps": {
+    "mcc_map": {
+      "5311": 0,
+      "7995": 1,
+      "6011": 2,
+      "4829": 3,
+      "5732": 4,
+      "7011": 5,
+      "5411": 6,
+      "4814": 7
+    },
+    "pay_map": {
+      "card": 0,
+      "wire": 1,
+      "crypto": 2,
+      "ach": 3
+    }
+  }
+}

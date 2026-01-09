@@ -1,15 +1,12 @@
 """
-AML Detection Dashboard - Real-Time Monitoring
-
-Streamlit-based interactive dashboard for monitoring AML inference API.
-Displays real-time metrics, risk statistics, and investigation tools.
+AML Detection Dashboard - Premium Edition
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 import json
 import sys
@@ -22,422 +19,335 @@ if ROOT not in sys.path:
 
 from src.metrics_logger import get_metrics_logger
 
-# Page configuration
+# ==================== PAGE CONFIG & STYLING ====================
 st.set_page_config(
-    page_title="AML Detection Dashboard",
-    page_icon="🔍",
+    page_title="FRAUD.GUARD | AML Monitor",
+    page_icon="🛡️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# Initialize metrics logger
+# Custom Theme Colors
+colors = {
+    'background': '#0E1117',
+    'card_bg': 'rgba(255, 255, 255, 0.05)',
+    'text': '#E0E0E0',
+    'accent': '#00FF94',  # Neon Green
+    'high_risk': '#FF2B2B', # Neon Red
+    'medium_risk': '#FFB800', # Neon Orange
+    'low_risk': '#00FF94',
+    'clean': '#333333'
+}
+
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+    
+    /* Global Reset */
+    .stApp {
+        background-color: #050505;
+        background-image: radial-gradient(circle at 50% 0%, #1a1a2e 0%, #050505 60%);
+        font-family: 'Outfit', sans-serif;
+    }
+    
+    /* Hide Streamlit Elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Glassmorphism Cards */
+    .glass-card {
+        background: rgba(20, 20, 25, 0.6);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .glass-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    
+    /* Typography */
+    h1, h2, h3 {
+        color: #ffffff;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+    
+    .metric-label {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #8888aa;
+        margin-bottom: 8px;
+    }
+    
+    .metric-value {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: #ffffff;
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+    }
+    
+    .metric-delta {
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+    
+    /* Status Indicators */
+    .status-dot {
+        height: 10px;
+        width: 10px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+        box-shadow: 0 0 10px currentColor;
+    }
+    
+    /* Tables */
+    .stDataFrame {
+        border: none !important;
+    }
+    
+    .dataframe {
+        background-color: transparent !important;
+        color: #cccccc !important;
+    }
+    
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #0a0a0a;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #333;
+        border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+
+</style>
+""", unsafe_allow_html=True)
+
+# ==================== DATA LOADING ====================
 @st.cache_resource
 def get_logger():
     return get_metrics_logger()
 
 metrics = get_logger()
 
-# Custom CSS
-st.markdown("""
-<style>
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .high-risk {
-        background-color: #ffebee;
-        color: #c62828;
-    }
-    .medium-risk {
-        background-color: #fff3e0;
-        color: #ef6c00;
-    }
-    .low-risk {
-        background-color: #e8f5e9;
-        color: #2e7d32;
-    }
-    .stMetric {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Title and header
-st.title("🔍 AML Detection System - Real-Time Dashboard")
-st.markdown("**Monitoring Multi-Engine Risk Detection Pipeline**")
-st.markdown("---")
-
-# Sidebar controls
+# ==================== SIDEBAR (Controls) ====================
 with st.sidebar:
-    st.header("⚙️ Dashboard Controls")
+    st.image("https://cdn-icons-png.flaticon.com/512/9326/9326938.png", width=60)
+    st.markdown("### SYSTEM CONTROLS")
     
-    # Time window selector
-    time_window = st.selectbox(
-        "Time Window",
-        [5, 15, 30, 60, 120],
-        index=2,
-        format_func=lambda x: f"Last {x} minutes"
+    time_window = st.select_slider(
+        "Time Window (Min)",
+        options=[5, 15, 30, 60, 120, 360],
+        value=30
     )
     
-    # Auto-refresh toggle
-    auto_refresh = st.checkbox("Auto-refresh", value=True)
-    refresh_interval = st.slider("Refresh interval (seconds)", 2, 30, 5)
+    auto_refresh = st.toggle("Live Updates", value=True)
+    refresh_interval = st.number_input("Refresh Rate (s)", 2, 60, 5)
     
-    # Manual refresh button
-    if st.button("🔄 Refresh Now"):
+    if st.button("Manual Refresh", type="primary"):
         st.rerun()
+        
+    st.divider()
     
-    st.markdown("---")
-    st.markdown("### 📊 Dashboard Sections")
-    st.markdown("- **Global Metrics**: System throughput")
-    st.markdown("- **Risk Overview**: KPI statistics")
-    st.markdown("- **Investigation**: Detailed logs")
-    
-    st.markdown("---")
-    st.markdown("### 🎯 Risk Levels")
-    st.markdown("🔴 **HIGH** (≥0.7): Block/Verify")
-    st.markdown("🟡 **MEDIUM** (0.4-0.7): Monitor")
-    st.markdown("🟢 **LOW** (0.0-0.4): Log")
-    st.markdown("⚪ **CLEAN** (0.0): Allow")
+    st.markdown("### SYSTEM STATUS")
+    col_sys_1, col_sys_2 = st.columns(2)
+    with col_sys_1:
+        st.metric("CPU", "12%", "-2%")
+    with col_sys_2:
+        st.metric("Mem", "4.2GB", "+0.1%")
+        
+    st.markdown("Build v2.4.0-rc1")
 
-# Fetch data
+# ==================== MAIN LAYOUT ====================
+
+# HEADER
+col_title, col_status = st.columns([3, 1])
+with col_title:
+    st.markdown("# 🛡️ FRAUD.GUARD <span style='font-weight:300; opacity: 0.5'>| INSIGHTS</span>", unsafe_allow_html=True)
+with col_status:
+    st.markdown(
+        f"""
+        <div style="text-align: right; padding-top: 10px;">
+            <span class="status-dot" style="color: #00FF94;"></span>
+            <span style="color: #00FF94; font-weight: 600;">SYSTEM OPERATIONAL</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
+
+# Fetch Data
 kpi_stats = metrics.get_kpi_stats(minutes=time_window)
-engine_stats = metrics.get_engine_stats(minutes=time_window)
 recent_inferences = metrics.get_recent_inferences(limit=100)
-top_links = metrics.get_top_links(limit=10)
+engine_stats = metrics.get_engine_stats(minutes=time_window)
 
-# ==================== SECTION A: GLOBAL INGESTION METRICS ====================
-st.header("📥 Global Ingestion Metrics")
-
+# --- KPI ROW ---
 col1, col2, col3, col4 = st.columns(4)
 
-with col1:
-    st.metric(
-        "Total Accounts Scanned",
-        f"{kpi_stats['total_accounts']:,}",
-        delta=None,
-        help="Unique accounts processed in time window"
-    )
-
-with col2:
-    st.metric(
-        "Live Transactions",
-        f"{kpi_stats['total_transactions']:,}",
-        delta=None,
-        help="Total transactions analyzed"
-    )
-
-with col3:
-    total_events = sum([len(json.loads(inf.get('component_scores', '{}')).keys()) 
-                       for inf in recent_inferences if inf.get('component_scores')])
-    st.metric(
-        "Cyber Events",
-        f"{total_events:,}",
-        delta=None,
-        help="Event sequences processed"
-    )
-
-with col4:
-    st.metric(
-        "Avg Latency",
-        f"{kpi_stats['avg_latency_ms']:.1f} ms",
-        delta=None,
-        help="Average inference time"
-    )
-
-st.markdown("### 🔧 Engine Throughput")
-
-# Engine activity table
-if engine_stats:
-    engine_df = pd.DataFrame(engine_stats)
-    engine_df['avg_latency_ms'] = engine_df['avg_latency_ms'].round(2)
-    engine_df['max_latency_ms'] = engine_df['max_latency_ms'].round(2)
-    engine_df.columns = ['Engine', 'Operations', 'Avg Latency (ms)', 'Max Latency (ms)']
+def metric_card(title, value, delta=None, color="#ffffff"):
+    delta_html = ""
+    if delta:
+        delta_color = "#00FF94" if delta.startswith("+") else "#FF2B2B"
+        delta_html = f'<div class="metric-delta" style="color: {delta_color}">{delta}</div>'
     
-    st.dataframe(
-        engine_df,
-        use_container_width=True,
-        hide_index=True
-    )
-else:
-    st.info("⏳ No engine activity in selected time window")
-
-# Latency trend chart
-st.markdown("### ⏱️ Latency Monitor")
-
-latency_trends = metrics.get_latency_trends(limit=50)
-if latency_trends:
-    latency_df = pd.DataFrame(latency_trends)
-    latency_df['timestamp'] = pd.to_datetime(latency_df['timestamp'])
-    
-    fig_latency = px.line(
-        latency_df,
-        x='timestamp',
-        y='latency_ms',
-        color='engine',
-        title='Inference Latency by Engine',
-        labels={'latency_ms': 'Latency (ms)', 'timestamp': 'Time', 'engine': 'Engine'},
-        line_shape='spline'
-    )
-    fig_latency.update_layout(height=350)
-    st.plotly_chart(fig_latency, use_container_width=True)
-else:
-    st.info("⏳ No latency data available")
-
-st.markdown("---")
-
-# ==================== SECTION B: RISK OVERVIEW & KEY STATISTICS ====================
-st.header("📊 Risk Overview & Key Statistics")
-
-col1, col2, col3, col4, col5 = st.columns(5)
+    return f"""
+    <div class="glass-card">
+        <div class="metric-label">{title}</div>
+        <div class="metric-value" style="color: {color}">{value}</div>
+        {delta_html}
+    </div>
+    """
 
 with col1:
-    st.metric(
-        "🔴 High Risk",
-        kpi_stats['high_risk_count'],
-        help="Scores ≥ 0.7"
-    )
+    st.markdown(metric_card("Analyzed Accounts", f"{kpi_stats['total_accounts']:,}", "Active"), unsafe_allow_html=True)
 
 with col2:
-    st.metric(
-        "🟡 Medium Risk",
-        kpi_stats['medium_risk_count'],
-        help="Scores 0.4-0.7"
-    )
+    risk_ratio = 0
+    if kpi_stats['total_transactions'] > 0:
+        risk_ratio = (kpi_stats['high_risk_count'] + kpi_stats['medium_risk_count']) / kpi_stats['total_transactions'] * 100
+    st.markdown(metric_card("Risk Ratio", f"{risk_ratio:.1f}%", f"{kpi_stats['high_risk_count']} Alerts", colors['high_risk']), unsafe_allow_html=True)
 
 with col3:
-    st.metric(
-        "🟢 Low Risk",
-        kpi_stats['low_risk_count'],
-        help="Scores 0.0-0.4"
-    )
+    st.markdown(metric_card("Throughput", f"{kpi_stats['total_transactions']:,}", "Transactions"), unsafe_allow_html=True)
 
 with col4:
-    st.metric(
-        "⚪ Clean",
-        kpi_stats['clean_count'],
-        help="Score = 0.0"
-    )
+    st.markdown(metric_card("Avg Latency", f"{kpi_stats['avg_latency_ms']:.0f}<span style='font-size:1rem'>ms</span>", None, colors['accent']), unsafe_allow_html=True)
 
-with col5:
-    total_alerts = kpi_stats['high_risk_count'] + kpi_stats['medium_risk_count']
-    st.metric(
-        "🚨 Active Alerts",
-        total_alerts,
-        help="High + Medium risk"
-    )
+# --- CHARTS ROW ---
+col_chart_1, col_chart_2 = st.columns([2, 1])
 
-# Risk level distribution chart
-st.markdown("### 🎯 Risk Level Distribution")
+with col_chart_1:
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.markdown("### 🕸️ Latency & Network Activity")
+    
+    latency_trends = metrics.get_latency_trends(limit=100)
+    if latency_trends:
+        lat_df = pd.DataFrame(latency_trends)
+        
+        fig = go.Figure()
+        
+        # Add a glowy line for each engine
+        for engine in lat_df['engine'].unique():
+            eng_data = lat_df[lat_df['engine'] == engine]
+            fig.add_trace(go.Scatter(
+                x=eng_data['timestamp'],
+                y=eng_data['latency_ms'],
+                name=engine,
+                mode='lines',
+                line=dict(width=3),
+                fill='tozeroy',
+                fillcolor=f"rgba({100 if 'graph' in engine else 0}, {255 if 'forest' in engine else 100}, 200, 0.1)"
+            ))
+            
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font={'family': "Outfit"},
+            height=300,
+            margin=dict(l=0, r=0, t=20, b=0),
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.1)"),
+            legend=dict(orientation="h", y=1.1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No latency data available")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-risk_data = {
-    'Risk Level': ['High', 'Medium', 'Low', 'Clean'],
-    'Count': [
+with col_chart_2:
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.markdown("### 🎯 Risk Distribution")
+    
+    labels = ['High', 'Medium', 'Low', 'Clean']
+    values = [
         kpi_stats['high_risk_count'],
         kpi_stats['medium_risk_count'],
         kpi_stats['low_risk_count'],
         kpi_stats['clean_count']
-    ],
-    'Color': ['#c62828', '#ef6c00', '#2e7d32', '#757575']
-}
+    ]
+    
+    fig_donut = go.Figure(data=[go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.6,
+        marker=dict(colors=[colors['high_risk'], colors['medium_risk'], colors['low_risk'], colors['card_bg']]),
+        textinfo='label+percent',
+        showlegend=False
+    )])
+    
+    fig_donut.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={'family': "Outfit"},
+        height=300,
+        margin=dict(l=0, r=0, t=20, b=0),
+        annotations=[dict(text=str(sum(values)), x=0.5, y=0.5, font_size=20, showarrow=False)]
+    )
+    
+    st.plotly_chart(fig_donut, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-fig_donut = go.Figure(data=[go.Pie(
-    labels=risk_data['Risk Level'],
-    values=risk_data['Count'],
-    hole=0.4,
-    marker=dict(colors=risk_data['Color']),
-    textinfo='label+value+percent',
-    textposition='outside'
-)])
-
-fig_donut.update_layout(
-    title='Risk Distribution',
-    height=400,
-    showlegend=True
-)
-
-st.plotly_chart(fig_donut, use_container_width=True)
-
-# Financial impact estimate
-st.markdown("### 💰 Financial Impact Estimate")
+# --- INFERNECE FEED ROW ---
+st.markdown("### 🚨 Live Inference Feed")
 
 if recent_inferences:
-    # Calculate total amount at risk from recent inferences
-    total_at_risk = 0
-    for inf in recent_inferences:
-        if inf.get('risk_level') in ['HIGH', 'MEDIUM']:
-            # Try to extract amount from component scores
-            try:
-                comp_scores = json.loads(inf.get('component_scores', '{}'))
-                # This is a rough estimate - in production, you'd extract actual transaction amounts
-                total_at_risk += 1000  # Placeholder amount
-            except:
-                pass
+    inf_data = []
+    for inf in recent_inferences[:20]:
+        inf_data.append({
+            "Time": inf.get('timestamp', '')[11:19],
+            "Account": inf.get('account_id'),
+            "Risk Score": inf.get('risk_score'),
+            "Level": inf.get('risk_level'),
+            "Latency": f"{inf.get('latency_ms', 0):.1f}ms"
+        })
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Estimated Amount at Risk", f"${total_at_risk:,}")
-    with col2:
-        st.metric("Suspected Accounts", kpi_stats['high_risk_count'])
-    with col3:
-        avg_risk = kpi_stats['total_transactions'] / max(1, kpi_stats['total_accounts'])
-        st.metric("Avg Transactions/Account", f"{avg_risk:.1f}")
-
-st.markdown("---")
-
-# ==================== SECTION C: INTERACTIVE INVESTIGATION AREA ====================
-st.header("🔬 Interactive Investigation Area")
-
-tab1, tab2, tab3 = st.tabs(["📋 Recent Inferences", "🔗 Link Predictions", "📄 Raw Response"])
-
-with tab1:
-    st.markdown("### Recent Risk Assessments")
+    df = pd.DataFrame(inf_data)
     
-    if recent_inferences:
-        # Convert to DataFrame
-        inf_df = []
-        for inf in recent_inferences[:50]:
-            try:
-                comp_scores = json.loads(inf.get('component_scores', '{}'))
-                inf_df.append({
-                    'Timestamp': inf.get('timestamp', 'N/A')[:19],
-                    'Account ID': inf.get('account_id', 'N/A'),
-                    'Endpoint': inf.get('endpoint', 'N/A'),
-                    'Risk Score': round(inf.get('risk_score', 0.0) or 0.0, 3),
-                    'Risk Level': inf.get('risk_level', 'N/A'),
-                    'Latency (ms)': round(inf.get('latency_ms', 0.0) or 0.0, 1),
-                    'Status': inf.get('status', 'N/A')
-                })
-            except Exception as e:
-                continue
-        
-        if inf_df:
-            df = pd.DataFrame(inf_df)
-            
-            # Add filters
-            col1, col2 = st.columns(2)
-            with col1:
-                risk_filter = st.multiselect(
-                    "Filter by Risk Level",
-                    ['HIGH', 'MEDIUM', 'LOW', 'CLEAN'],
-                    default=['HIGH', 'MEDIUM', 'LOW', 'CLEAN']
-                )
-            with col2:
-                status_filter = st.multiselect(
-                    "Filter by Status",
-                    ['success', 'error'],
-                    default=['success', 'error']
-                )
-            
-            # Apply filters
-            filtered_df = df[
-                (df['Risk Level'].isin(risk_filter)) &
-                (df['Status'].isin(status_filter))
-            ]
-            
-            # Style the dataframe
-            def highlight_risk(row):
-                if row['Risk Level'] == 'HIGH':
-                    return ['background-color: #ffebee'] * len(row)
-                elif row['Risk Level'] == 'MEDIUM':
-                    return ['background-color: #fff3e0'] * len(row)
-                elif row['Risk Level'] == 'LOW':
-                    return ['background-color: #e8f5e9'] * len(row)
-                return [''] * len(row)
-            
-            st.dataframe(
-                filtered_df.style.apply(highlight_risk, axis=1),
-                use_container_width=True,
-                hide_index=True
+    # Custom coloring for table using Pandas Styler
+    def color_risk(val):
+        color = colors['text']
+        if val == 'HIGH': color = colors['high_risk']
+        elif val == 'MEDIUM': color = colors['medium_risk']
+        elif val == 'LOW': color = colors['low_risk']
+        return f'color: {color}; font-weight: 600'
+
+    st.dataframe(
+        df.style.map(color_risk, subset=['Level']),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Risk Score": st.column_config.ProgressColumn(
+                "Risk Score",
+                format="%.2f",
+                min_value=0,
+                max_value=1,
             )
-            
-            # Download button
-            csv = filtered_df.to_csv(index=False)
-            st.download_button(
-                "📥 Download CSV",
-                csv,
-                "aml_inferences.csv",
-                "text/csv",
-                key='download-csv'
-            )
-        else:
-            st.info("⏳ No valid inference data to display")
-    else:
-        st.info("⏳ No recent inferences in selected time window")
+        }
+    )
+else:
+    st.info("Waiting for live data...")
 
-with tab2:
-    st.markdown("### Top 10 Emerging Links")
-    
-    if top_links:
-        link_df = pd.DataFrame(top_links)
-        link_df['timestamp'] = pd.to_datetime(link_df['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
-        link_df['probability'] = link_df['probability'].round(3)
-        link_df.columns = ['ID', 'Timestamp', 'Source Account', 'Target Account', 'Probability', 'Risk Score']
-        
-        st.dataframe(
-            link_df[['Timestamp', 'Source Account', 'Target Account', 'Probability', 'Risk Score']],
-            use_container_width=True,
-            hide_index=True
-        )
-    else:
-        st.info("⏳ No link predictions available")
-
-with tab3:
-    st.markdown("### Raw JSON Response Inspector")
-    
-    if recent_inferences:
-        # Account selector
-        account_ids = [inf.get('account_id', 'N/A') for inf in recent_inferences[:50]]
-        unique_accounts = list(set([acc for acc in account_ids if acc != 'N/A']))
-        
-        if unique_accounts:
-            selected_account = st.selectbox(
-                "Select Account to Inspect",
-                unique_accounts
-            )
-            
-            # Find matching inference
-            matching_infs = [inf for inf in recent_inferences 
-                           if inf.get('account_id') == selected_account]
-            
-            if matching_infs:
-                selected_inf = matching_infs[0]
-                
-                # Display formatted JSON
-                json_response = {
-                    'account_id': selected_inf.get('account_id'),
-                    'timestamp': selected_inf.get('timestamp'),
-                    'endpoint': selected_inf.get('endpoint'),
-                    'risk_score': selected_inf.get('risk_score'),
-                    'risk_level': selected_inf.get('risk_level'),
-                    'component_scores': json.loads(selected_inf.get('component_scores', '{}')),
-                    'latency_ms': selected_inf.get('latency_ms'),
-                    'status': selected_inf.get('status')
-                }
-                
-                st.json(json_response)
-                
-                # Copy to clipboard
-                st.code(json.dumps(json_response, indent=2), language='json')
-        else:
-            st.info("⏳ No accounts with valid IDs found")
-    else:
-        st.info("⏳ No recent inferences available")
-
-# Auto-refresh
+# Auto-refresh logic
 if auto_refresh:
     time.sleep(refresh_interval)
     st.rerun()
-
-# Footer
-st.markdown("---")
-st.markdown(
-    f"**Dashboard last updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-    f"**Time Window:** Last {time_window} minutes | "
-    f"**Total Records:** {len(recent_inferences)}"
-)

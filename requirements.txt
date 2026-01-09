@@ -4,3 +4,8 @@ matplotlib
 numpy
 six
 torch
+flask
+requests
+streamlit
+plotly
+lightgbm
