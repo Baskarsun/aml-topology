@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import json
+import os
 from src.simulator import TransactionSimulator
 from src.graph_analyzer import AMLGraphAnalyzer
 from src.csr_cycle_detector import build_csr, detect_cycles_csr
@@ -7,7 +9,30 @@ from src.visualizer import plot_graph
 from src.behavioral_detector import BehavioralDetector
 from src.temporal_predictor import TemporalPredictor, SequenceAnalyzer
 from src.embedding_builder import build_time_series_node_embeddings, build_pair_sequences_for_pairs
-from src.lstm_link_predictor import LSTMLinkPredictor, train_model, predict_proba
+from src.lstm_link_predictor import LSTMLinkPredictor, train_model, predict_proba, save_model
+from src.risk_consolidator import RiskConsolidator
+
+# Additional model trainers with persistence
+try:
+    from src.gnn_trainer import train_demo as train_gnn_demo
+    _HAS_GNN = True
+except ImportError:
+    _HAS_GNN = False
+    print("Warning: GNN trainer not available")
+
+try:
+    from src.sequence_detector import demo_run as sequence_detector_demo
+    _HAS_SEQUENCE = True
+except ImportError:
+    _HAS_SEQUENCE = False
+    print("Warning: Sequence detector not available")
+
+try:
+    from src.gbdt_detector import demo_run as gbdt_detector_demo
+    _HAS_GBDT = True
+except ImportError:
+    _HAS_GBDT = False
+    print("Warning: GBDT detector not available")
 
 def main():
     print("=== AML Graph Analysis Engine ===")
@@ -246,6 +271,30 @@ def main():
                         model, sequences, labels, epochs=15, batch_size=32, lr=1e-3, use_class_weight=True
                     )
                     
+                    # Save trained LSTM model
+                    print("\n[5.4.1] Saving LSTM model weights...")
+                    os.makedirs('models', exist_ok=True)
+                    lstm_model_path = 'models/lstm_link_predictor.pt'
+                    save_model(model, lstm_model_path)
+                    print(f"LSTM model saved to '{lstm_model_path}'")
+                    
+                    # Save LSTM training metadata
+                    lstm_metadata = {
+                        'input_size': input_size,
+                        'hidden_size': 64,
+                        'num_layers': 1,
+                        'dropout': 0.1,
+                        'num_sequences': len(sequences),
+                        'num_epochs_trained': len(history['train_loss']),
+                        'final_val_auc': float(history['val_auc'][-1]) if history['val_auc'] else 0.0,
+                        'final_train_loss': float(history['train_loss'][-1]) if history['train_loss'] else 0.0,
+                        'feature_names': feature_names
+                    }
+                    lstm_metadata_path = 'models/lstm_metadata.json'
+                    with open(lstm_metadata_path, 'w') as f:
+                        json.dump(lstm_metadata, f, indent=2)
+                    print(f"LSTM metadata saved to '{lstm_metadata_path}'")
+                    
                     print("\n[5.5] Predicting emerging links...")
                     predictions = predict_proba(model, sequences)
                     emerging_links = [
@@ -267,10 +316,157 @@ def main():
     except Exception as e:
         print(f"LSTM phase skipped (optional): {e}")
 
+    # 5.5 OPTIONAL: Train and Persist Additional Models (GNN, Sequence Detector, GBDT)
+    print("\n[5.5] Training and Persisting Additional ML Models (with model persistence)...")
+    
+    # GNN Phase (Optional)
+    if _HAS_GNN:
+        try:
+            print("\n[5.5.1] Training GNN for node classification...")
+            train_gnn_demo(num_nodes=50, epochs=20, save_model_flag=True)
+            print("GNN model trained and persisted to models/gnn_model.pt")
+        except Exception as e:
+            print(f"GNN training skipped: {e}")
+    
+    # Sequence Detector Phase (Optional)
+    if _HAS_SEQUENCE:
+        try:
+            print("\n[5.5.2] Training Sequence Detector for event anomaly detection...")
+            sequence_detector_demo(num_sequences=1000, seq_len=15, epochs=5, model_type='lstm', save_model_flag=True)
+            print("Sequence detector model trained and persisted to models/sequence_detector_model.pt")
+        except Exception as e:
+            print(f"Sequence detector training skipped: {e}")
+    
+    # GBDT Phase (Optional)
+    if _HAS_GBDT:
+        try:
+            print("\n[5.5.3] Training GBDT classifier for transaction-level anomalies...")
+            gbdt_detector_demo(n=5000, save_model_flag=True)
+            print("GBDT model trained and persisted to models/")
+        except Exception as e:
+            print(f"GBDT training skipped: {e}")
+
     print("\n[4] Generating Visualization...")
     if suspicious_set:
         print(f"Highlighting {len(suspicious_set)} suspicious nodes (spatial + temporal + LSTM).")
     plot_graph(analyzer.G, suspicious_nodes=list(suspicious_set), filename="aml_network_graph.png")
+
+    # 6. RISK CONSOLIDATION & FINAL RANKING (Phase 6)
+    print("\n[6] Consolidating Multi-Phase Risk Scores...")
+    
+    # Organize signals from all phases into consolidated structure
+    spatial_signals = {
+        'cycles': cycles,
+        'fan_ins': fan_ins,
+        'fan_outs': fan_outs,
+        'centrality': bridges
+    }
+    
+    behavioral_signals = {
+        'cyber_alerts': cs_flags + bf_flags + it_flags
+    }
+    
+    temporal_signals = {
+        'risk_predictions': risk_predictions,
+        'concentration': temporal_bursts,
+        'cycle_pred': cycle_predictions
+    }
+    
+    lstm_signals = {
+        'emerging_links': emerging_links if 'emerging_links' in locals() else []
+    }
+    
+    # Initialize consolidator with custom weights (parameterized)
+    risk_weights = {
+        'spatial': 0.20,      # Graph topology (cycles, fan-in/out, centrality)
+        'behavioral': 0.10,   # Cyber behavioral alerts
+        'temporal': 0.35,     # Temporal patterns (strongest predictor)
+        'lstm': 0.25,         # ML-based link prediction
+        'cyber': 0.10         # Additional cyber signals
+    }
+    
+    consolidator = RiskConsolidator(weights=risk_weights)
+    consolidated_risks = consolidator.consolidate_risks(
+        spatial_signals=spatial_signals,
+        behavioral_signals=behavioral_signals,
+        temporal_signals=temporal_signals,
+        lstm_signals=lstm_signals,
+        all_nodes=list(analyzer.G.nodes())
+    )
+    
+    # Save risk consolidation configuration
+    print("\n[6.0.1] Saving risk consolidation weights and parameters...")
+    os.makedirs('models', exist_ok=True)
+    consolidation_config = {
+        'weights': consolidator.weights,
+        'signal_thresholds': consolidator.signal_thresholds,
+        'normalize_output': consolidator.normalize_output,
+        'timestamp': pd.Timestamp.now().isoformat()
+    }
+    consolidation_config_path = 'models/consolidation_config.json'
+    with open(consolidation_config_path, 'w') as f:
+        json.dump(consolidation_config, f, indent=2)
+    print(f"Consolidation weights saved to '{consolidation_config_path}'")
+    print(f"  Phase Weights: {consolidator.weights}")
+    
+    # Generate summary report
+    print("\n[6.1] Risk Score Summary")
+    summary = consolidator.get_summary_report(consolidated_risks)
+    print(f"  Total accounts analyzed: {summary['total_accounts']}")
+    print(f"  High-risk (>0.7): {summary['high_risk_count']}")
+    print(f"  Medium-risk (0.4-0.7): {summary['medium_risk_count']}")
+    print(f"  Low-risk (0.0-0.4): {summary['low_risk_count']}")
+    print(f"  Clean (0.0): {summary['clean_count']}")
+    print(f"  Average risk score: {summary['avg_risk_score']:.3f}")
+    print(f"  Highest risk score: {summary['max_risk_score']:.3f}")
+    
+    # Top 15 highest-risk accounts
+    print("\n[6.2] TOP 15 HIGHEST-RISK ACCOUNTS (CONSOLIDATED)")
+    print("-" * 95)
+    print(f"{'Rank':<6}{'Account':<15}{'Final Score':<15}{'Spatial':<12}{'Behavioral':<14}{'Temporal':<12}{'LSTM':<12}{'Signals':<20}")
+    print("-" * 95)
+    
+    top_accounts = consolidator.get_top_accounts(consolidated_risks, top_n=15)
+    for account, risk_data in top_accounts:
+        rank = risk_data['risk_rank']
+        final_score = risk_data['final_risk_score']
+        spatial_score = risk_data['spatial_score']
+        behavioral_score = risk_data['behavioral_score']
+        temporal_score = risk_data['temporal_score']
+        lstm_score = risk_data['lstm_score']
+        signal_count = len(risk_data['signals'])
+        signals_str = ','.join(risk_data['signals'][:3]) + ('...' if signal_count > 3 else '')
+        
+        print(f"{rank:<6}{account:<15}{final_score:<15.4f}{spatial_score:<12.3f}{behavioral_score:<14.3f}{temporal_score:<12.3f}{lstm_score:<12.3f}{signals_str:<20}")
+    
+    print("-" * 95)
+    
+    # Save consolidated results to CSV
+    print("\n[6.3] Saving consolidated risk scores to CSV...")
+    consolidated_df = pd.DataFrame([
+        {
+            'account': account,
+            'final_risk_score': data['final_risk_score'],
+            'spatial_score': data['spatial_score'],
+            'behavioral_score': data['behavioral_score'],
+            'temporal_score': data['temporal_score'],
+            'lstm_score': data['lstm_score'],
+            'risk_rank': data['risk_rank'],
+            'signal_count': len(data['signals']),
+            'signals': '|'.join(data['signals'])
+        }
+        for account, data in consolidated_risks.items()
+    ])
+    
+    consolidated_df = consolidated_df.sort_values('final_risk_score', ascending=False)
+    consolidated_df.to_csv('consolidated_risk_scores.csv', index=False)
+    print("Consolidated risk scores saved to 'consolidated_risk_scores.csv'")
+    
+    print("\n[6.4] Phase-Specific Insights")
+    print(f"  Spatial: {len([s for s in consolidated_risks.values() if s['spatial_score'] > 0.0])} accounts flagged")
+    print(f"  Behavioral: {len([s for s in consolidated_risks.values() if s['behavioral_score'] > 0.0])} accounts flagged")
+    print(f"  Temporal: {len([s for s in consolidated_risks.values() if s['temporal_score'] > 0.0])} accounts flagged")
+    print(f"  LSTM: {len([s for s in consolidated_risks.values() if s['lstm_score'] > 0.0])} accounts flagged")
 
     print("\nDone.")
 

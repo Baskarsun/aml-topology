@@ -2,6 +2,7 @@ import os
 import sys
 import random
 import time
+import json
 from typing import List, Tuple
 
 import numpy as np
@@ -145,6 +146,67 @@ class TransformerDetector(nn.Module):
         return self.out(pooled).squeeze(1)
 
 
+def save_sequence_model(model: nn.Module, model_type: str, num_sequences: int, epochs: int, seq_len: int, metrics: dict = None):
+    """Save sequence detector model weights and metadata to disk."""
+    models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
+    os.makedirs(models_dir, exist_ok=True)
+    
+    # Save model state dict
+    model_path = os.path.join(models_dir, 'sequence_detector_model.pt')
+    torch.save(model.state_dict(), model_path)
+    print(f'Saved sequence detector model weights to {model_path}')
+    
+    # Save metadata
+    metadata = {
+        'model_type': model_type,
+        'num_sequences': num_sequences,
+        'epochs_trained': epochs,
+        'seq_len': seq_len,
+        'timestamp': time.time(),
+        'num_event_types': len(EVENT_TYPES),
+        'event_types': EVENT_TYPES
+    }
+    if metrics:
+        metadata['metrics'] = metrics
+    
+    metadata_path = os.path.join(models_dir, 'sequence_detector_metadata.json')
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f'Saved sequence detector metadata to {metadata_path}')
+    
+    return model_path, metadata_path
+
+
+def load_sequence_model(model_type: str = 'lstm'):
+    """Load sequence detector model weights and metadata from disk."""
+    models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
+    model_path = os.path.join(models_dir, 'sequence_detector_model.pt')
+    metadata_path = os.path.join(models_dir, 'sequence_detector_metadata.json')
+    
+    if not os.path.exists(model_path) or not os.path.exists(metadata_path):
+        raise FileNotFoundError(f'Sequence detector model files not found in {models_dir}')
+    
+    # Load metadata
+    with open(metadata_path, 'r') as f:
+        metadata = json.load(f)
+    
+    # Create model instance based on stored type
+    stored_type = metadata.get('model_type', model_type)
+    num_event_types = metadata.get('num_event_types', len(EVENT_TYPES))
+    
+    if stored_type == 'lstm':
+        model = LSTMDetector(num_event_types)
+    else:
+        model = TransformerDetector(num_event_types)
+    
+    model.load_state_dict(torch.load(model_path, map_location='cpu'))
+    model.eval()
+    
+    print(f'Loaded sequence detector model from {model_path}')
+    print(f'Model metadata: {metadata}')
+    return model, metadata
+
+
 def train_sequence_model(model: nn.Module, train_dl: DataLoader, test_dl: DataLoader, epochs: int = 10, lr: float = 1e-3):
     opt = optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.BCELoss()
@@ -187,7 +249,7 @@ def train_sequence_model(model: nn.Module, train_dl: DataLoader, test_dl: DataLo
     return model
 
 
-def demo_run(num_sequences: int = 2000, seq_len: int = 20, epochs: int = 8, model_type: str = 'lstm'):
+def demo_run(num_sequences: int = 2000, seq_len: int = 20, epochs: int = 8, model_type: str = 'lstm', save_model_flag: bool = True):
     X, y = generate_synthetic_event_sequences(num_sequences, seq_len, fraud_rate=0.12)
     # split
     N = len(X)
@@ -232,6 +294,22 @@ def demo_run(num_sequences: int = 2000, seq_len: int = 20, epochs: int = 8, mode
     rec = tp / (tp + fn + 1e-9)
     acc = (tp + tn) / len(trues)
     print(f"Final Test — acc={acc:.4f} prec={prec:.4f} rec={rec:.4f} tp={tp} fp={fp} fn={fn} tn={tn}")
+
+    # save model and metadata if requested
+    if save_model_flag:
+        try:
+            metrics = {
+                'accuracy': float(acc),
+                'precision': float(prec),
+                'recall': float(rec),
+                'tp': int(tp),
+                'fp': int(fp),
+                'fn': int(fn),
+                'tn': int(tn)
+            }
+            save_sequence_model(model, model_type, num_sequences, epochs, seq_len, metrics)
+        except Exception as e:
+            print(f'Failed to save sequence detector model: {e}')
 
     # print some high-risk examples
     idx_sorted = np.argsort(-preds)

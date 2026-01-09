@@ -2,7 +2,8 @@ import os
 import sys
 import random
 import time
-from typing import Tuple, Dict
+import json
+from typing import Tuple, Dict, Any
 
 # Ensure workspace root is on path so `src` imports work when running this script directly.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,8 +17,6 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import json
-from typing import Any
 try:
     import yaml
     _HAS_YAML = True
@@ -382,7 +381,7 @@ class HeteroGraphSage(nn.Module):
         return acct_out
 
 
-def train_demo_hetero(num_accounts: int = 800, epochs: int = 40, constraint_lambda: float = 1.0):
+def train_demo_hetero(num_accounts: int = 800, epochs: int = 40, constraint_lambda: float = 1.0, save_model_flag: bool = True):
     G, labels, profiles = generate_hetero_graph(num_accounts=num_accounts)
     feats_dict, idx_map, nodes_sorted = build_hetero_node_features(G)
     # normalize per-type features to zero-mean/unit-variance to stabilize training
@@ -450,6 +449,13 @@ def train_demo_hetero(num_accounts: int = 800, epochs: int = 40, constraint_lamb
         export_rule_explanations(acct_nodes, per_rule_nodes, rule_scores, out_csv)
     except Exception as e:
         print('Failed to export hetero rule explanations:', e)
+
+    # save model and metadata if requested
+    if save_model_flag:
+        try:
+            save_gnn_model(model, acct_nodes, num_accounts, epochs, constraint_lambda, model_type='hetero_graphsage')
+        except Exception as e:
+            print(f'Failed to save heterogeneous GNN model: {e}')
 
     return model, acct_nodes, out, y
 
@@ -835,7 +841,61 @@ def export_rule_explanations(nodes: list, per_rule: Dict[str, np.ndarray], agg_s
     print(f'Wrote rule explanations to {out_path}')
 
 
-def train_demo(num_nodes: int = 1000, epochs: int = 60, constraint_lambda: float = 1.0):
+def save_gnn_model(model: nn.Module, nodes_sorted: list, num_nodes: int, epochs: int, constraint_lambda: float, model_type: str = 'graphsage'):
+    """Save GNN model weights and metadata to disk."""
+    models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
+    os.makedirs(models_dir, exist_ok=True)
+    
+    # Save model state dict
+    model_path = os.path.join(models_dir, 'gnn_model.pt')
+    torch.save(model.state_dict(), model_path)
+    print(f'Saved GNN model weights to {model_path}')
+    
+    # Save metadata
+    metadata = {
+        'model_type': model_type,
+        'num_nodes': num_nodes,
+        'epochs_trained': epochs,
+        'constraint_lambda': float(constraint_lambda),
+        'timestamp': time.time(),
+        'node_count': len(nodes_sorted),
+        'nodes_sample': nodes_sorted[:100]  # store first 100 node IDs for reference
+    }
+    metadata_path = os.path.join(models_dir, 'gnn_metadata.json')
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f'Saved GNN metadata to {metadata_path}')
+    
+    return model_path, metadata_path
+
+
+def load_gnn_model(model_class=None):
+    """Load GNN model weights and metadata from disk."""
+    if model_class is None:
+        model_class = GraphSage
+    
+    models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
+    model_path = os.path.join(models_dir, 'gnn_model.pt')
+    metadata_path = os.path.join(models_dir, 'gnn_metadata.json')
+    
+    if not os.path.exists(model_path) or not os.path.exists(metadata_path):
+        raise FileNotFoundError(f'GNN model files not found in {models_dir}')
+    
+    # Load metadata
+    with open(metadata_path, 'r') as f:
+        metadata = json.load(f)
+    
+    # Infer input features from metadata (default 8 for now, can be enhanced)
+    model = model_class(in_feats=8)
+    model.load_state_dict(torch.load(model_path, map_location='cpu'))
+    model.eval()
+    
+    print(f'Loaded GNN model from {model_path}')
+    print(f'Model metadata: {metadata}')
+    return model, metadata
+
+
+def train_demo(num_nodes: int = 1000, epochs: int = 60, constraint_lambda: float = 1.0, save_model_flag: bool = True):
     G, labels, profiles = generate_synthetic_graph(num_nodes=num_nodes)
     df_tx = graph_to_tx_df(G)
     X_np, node_index, raw_feats = build_node_features(G, df_tx, profiles)
@@ -896,6 +956,13 @@ def train_demo(num_nodes: int = 1000, epochs: int = 60, constraint_lambda: float
         export_rule_explanations(nodes_sorted, per_rule, rule_scores, out_csv)
     except Exception as e:
         print('Failed to export rule explanations:', e)
+
+    # save model and metadata if requested
+    if save_model_flag:
+        try:
+            save_gnn_model(model, nodes_sorted, num_nodes, epochs, constraint_lambda)
+        except Exception as e:
+            print(f'Failed to save GNN model: {e}')
 
     # return model, node ordering, predictions
     return model, nodes_sorted, out.numpy(), y.numpy()

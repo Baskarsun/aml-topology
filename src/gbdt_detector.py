@@ -1,6 +1,7 @@
 import os
 import random
 import time
+import json
 from typing import Tuple, Dict
 
 import numpy as np
@@ -182,7 +183,83 @@ def featurize(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     return df2[features], {'mcc_map': mcc_map, 'pay_map': pay_map}
 
 
-def train_gbdt(X: pd.DataFrame, y: pd.Series, lib: str = None):
+def save_gbdt_model(model, lib: str, metrics: dict = None, feature_names: list = None):
+    """Save GBDT model weights and metadata to disk."""
+    models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
+    os.makedirs(models_dir, exist_ok=True)
+    
+    # Save model based on library
+    if lib == 'lightgbm':
+        model_path = os.path.join(models_dir, 'lgb_model.txt')
+        model.save_model(model_path)
+        print(f'Saved LightGBM model to {model_path}')
+    elif lib == 'xgboost':
+        model_path = os.path.join(models_dir, 'xgb_model.json')
+        model.save_model(model_path)
+        print(f'Saved XGBoost model to {model_path}')
+    elif lib == 'catboost':
+        model_path = os.path.join(models_dir, 'catboost_model')
+        model.save_model(model_path)
+        print(f'Saved CatBoost model to {model_path}')
+    else:
+        # torch fallback: not persisted (would need separate torch.save)
+        model_path = None
+        print('Torch fallback model not persisted')
+    
+    # Save metadata
+    metadata = {
+        'library': lib,
+        'timestamp': time.time(),
+        'feature_count': len(feature_names) if feature_names else 11
+    }
+    if feature_names:
+        metadata['feature_names'] = feature_names
+    if metrics:
+        metadata['metrics'] = metrics
+    
+    metadata_path = os.path.join(models_dir, 'gbdt_metadata.json')
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    print(f'Saved GBDT metadata to {metadata_path}')
+    
+    return model_path, metadata_path
+
+
+def load_gbdt_model():
+    """Load GBDT model from disk."""
+    models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
+    metadata_path = os.path.join(models_dir, 'gbdt_metadata.json')
+    
+    if not os.path.exists(metadata_path):
+        raise FileNotFoundError(f'GBDT metadata not found in {models_dir}')
+    
+    # Load metadata
+    with open(metadata_path, 'r') as f:
+        metadata = json.load(f)
+    
+    lib = metadata.get('library', GBDT_LIB)
+    
+    # Load model based on library
+    if lib == 'lightgbm':
+        model_path = os.path.join(models_dir, 'lgb_model.txt')
+        model = lgb.Booster(model_file=model_path)
+    elif lib == 'xgboost':
+        model_path = os.path.join(models_dir, 'xgb_model.json')
+        model = xgb.Booster()
+        model.load_model(model_path)
+    elif lib == 'catboost':
+        model_path = os.path.join(models_dir, 'catboost_model')
+        model = CatBoostClassifier()
+        model.load_model(model_path)
+    else:
+        raise ValueError(f'Unsupported GBDT library: {lib}')
+    
+    print(f'Loaded GBDT model from {models_dir} (library: {lib})')
+    print(f'Model metadata: {metadata}')
+    return model, metadata
+
+
+def train_gbdt(X: pd.DataFrame, y: pd.Series, lib: str = None, save_model_flag: bool = True):
     lib = lib or GBDT_LIB
     print(f"Using GBDT library: {lib}")
     X_train, X_test, y_train, y_test = train_test_split_manual(X, y, test_size=0.2, random_state=42, stratify=y.values if hasattr(y, 'values') else y)
@@ -260,6 +337,20 @@ def train_gbdt(X: pd.DataFrame, y: pd.Series, lib: str = None):
 
     print(f"Eval — acc={acc:.4f} prec={prec:.4f} rec={rec:.4f} auc={auc}")
 
+    # save model and metadata if requested
+    if save_model_flag:
+        try:
+            metrics = {
+                'accuracy': float(acc),
+                'precision': float(prec),
+                'recall': float(rec),
+                'auc': float(auc) if auc is not None else None
+            }
+            feature_names = ['amt_log', 'mcc_enc', 'payment_type_enc', 'device_change', 'ip_risk', 'count_1h', 'sum_24h', 'uniq_payees_24h', 'is_international', 'avg_tx_24h', 'velocity_score']
+            save_gbdt_model(model, lib, metrics, feature_names)
+        except Exception as e:
+            print(f'Failed to save GBDT model: {e}')
+
     # return model and test metadata
     return model, (X_test, y_test, pred)
 
@@ -319,21 +410,12 @@ def score_transaction(tx: Dict, maps: Dict, model) -> float:
         return 0.0
 
 
-def demo_run(n: int = 20000):
+def demo_run(n: int = 20000, save_model_flag: bool = True):
     print("Generating synthetic transactions...")
     df = generate_synthetic_transactions(n=n)
     X, maps = featurize(df)
     y = df['label']
-    model, meta = train_gbdt(X, y)
-    # save model if lightgbm
-    try:
-        out_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
-        os.makedirs(out_dir, exist_ok=True)
-        if GBDT_LIB == 'lightgbm' and isinstance(model, lgb.Booster):
-            model.save_model(os.path.join(out_dir, 'lgb_model.txt'))
-            print('Saved LightGBM model to models/lgb_model.txt')
-    except Exception:
-        pass
+    model, meta = train_gbdt(X, y, save_model_flag=save_model_flag)
 
 
 if __name__ == '__main__':

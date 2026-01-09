@@ -1,0 +1,21 @@
+{
+  "weights": {
+    "spatial": 0.2,
+    "behavioral": 0.15,
+    "temporal": 0.35,
+    "lstm": 0.2,
+    "cyber": 0.1
+  },
+  "signal_thresholds": {
+    "cycle_detected": 0,
+    "fan_in_threshold": 3,
+    "fan_out_threshold": 3,
+    "centrality_percentile": 60,
+    "behavioral_alert": 0,
+    "temporal_concentration": 0.3,
+    "lstm_prob_min": 0.4,
+    "cyber_alert": 0
+  },
+  "normalize_output": true,
+  "timestamp": "2026-01-09T10:30:00.000000"
+}

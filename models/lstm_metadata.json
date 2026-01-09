@@ -1,0 +1,30 @@
+{
+  "input_size": 36,
+  "hidden_size": 64,
+  "num_layers": 1,
+  "dropout": 0.1,
+  "num_sequences": 1225,
+  "num_epochs_trained": 6,
+  "final_val_auc": 0.0,
+  "final_train_loss": 0.9954231595603611,
+  "feature_names": [
+    "in_degree",
+    "out_degree",
+    "total_degree",
+    "pagerank",
+    "clustering_coeff",
+    "reciprocal_count",
+    "unique_counterparties",
+    "baseline_avg_out",
+    "tx_count_out",
+    "tx_count_in",
+    "total_out_amount",
+    "total_in_amount",
+    "avg_out_amount",
+    "median_out_amount",
+    "std_out_amount",
+    "unique_out_targets",
+    "time_since_last_tx_seconds",
+    "fraud_score"
+  ]
+}
