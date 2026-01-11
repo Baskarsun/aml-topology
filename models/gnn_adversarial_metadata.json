@@ -1,0 +1,76 @@
+{
+  "num_rounds": 2,
+  "episodes_per_round": 15,
+  "gnn_epochs": 20,
+  "mix_ratio": 0.5,
+  "replay_capacity": 100,
+  "agent_path": "models/adversarial_agent.pt",
+  "round_metrics": [
+    {
+      "round": 1,
+      "generation_stats": {
+        "num_episodes": 15,
+        "total_graphs": 15,
+        "total_suspicious_nodes": 4387,
+        "unique_suspicious_nodes": 2889,
+        "pattern_distribution": {
+          "0": 69,
+          "1": 12,
+          "2": 11,
+          "3": 32,
+          "4": 26
+        }
+      },
+      "buffer_stats": {
+        "total": 60,
+        "organic": 30,
+        "original_fraud": 15,
+        "adversarial": 15,
+        "capacity": 100
+      },
+      "final_train_loss": 0.3071388522783915,
+      "final_train_acc": 0.9754485363550519,
+      "original_acc": null,
+      "adversarial_acc": 0.9753296469587409,
+      "eval_adversarial": 0.9278146028518677,
+      "eval_original": 0.82734614610672,
+      "forgetting_gap": -0.1004684567451477,
+      "time_seconds": 117.43744111061096
+    },
+    {
+      "round": 2,
+      "generation_stats": {
+        "num_episodes": 15,
+        "total_graphs": 15,
+        "total_suspicious_nodes": 4237,
+        "unique_suspicious_nodes": 2816,
+        "pattern_distribution": {
+          "0": 68,
+          "1": 8,
+          "2": 23,
+          "3": 29,
+          "4": 22
+        }
+      },
+      "buffer_stats": {
+        "total": 75,
+        "organic": 30,
+        "original_fraud": 15,
+        "adversarial": 30,
+        "capacity": 100
+      },
+      "final_train_loss": 0.24874170124530792,
+      "final_train_acc": 0.9833175579744439,
+      "original_acc": null,
+      "adversarial_acc": 0.9815133276010318,
+      "eval_adversarial": 0.9522349238395691,
+      "eval_original": 0.8603951334953308,
+      "forgetting_gap": -0.09183979034423828,
+      "time_seconds": 153.47615551948547
+    }
+  ],
+  "final_adversarial_detection": 0.9522349238395691,
+  "final_original_detection": 0.8603951334953308,
+  "final_forgetting_gap": -0.09183979034423828,
+  "trained_at": "2026-01-11T18:53:44.383010"
+}

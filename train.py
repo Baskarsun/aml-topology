@@ -59,6 +59,14 @@ except ImportError:
     _HAS_GBDT = False
     print("Warning: GBDT detector not available")
 
+try:
+    from src.adversarial_agent import AdversarialPatternAgent
+    from src.adversarial_env import create_adversarial_env
+    _HAS_ADVERSARIAL = True
+except ImportError:
+    _HAS_ADVERSARIAL = False
+    print("Warning: Adversarial agent not available")
+
 
 def ensure_models_dir():
     """Create models directory if it doesn't exist."""
@@ -317,6 +325,141 @@ def train_sequence_model(num_sequences=1000, seq_len=15, epochs=5, save_path='mo
         return False
 
 
+def train_adversarial_agent(
+    num_episodes: int = 100,
+    steps_per_episode: int = 10,
+    num_base_accounts: int = 300,
+    save_path: str = 'models/adversarial_agent.pt',
+    device: str = 'cpu'
+):
+    """
+    Train Adversarial Pattern Agent (PPO) to generate evasive AML patterns.
+    
+    This trains a reinforcement learning agent that learns to inject patterns
+    (peel chains, wash trading, etc.) that evade GNN-based detection.
+    
+    Args:
+        num_episodes: Number of training episodes
+        steps_per_episode: Pattern injections per episode
+        num_base_accounts: Size of base transaction graph
+        save_path: Path to save trained agent
+        device: 'cpu' or 'cuda'
+    """
+    if not _HAS_ADVERSARIAL:
+        print("❌ Adversarial training skipped (dependencies not available)")
+        return False
+    
+    print("\n" + "-"*60)
+    print("TRAINING ADVERSARIAL PATTERN AGENT (PPO)")
+    print("-"*60)
+    print(f"Episodes: {num_episodes}")
+    print(f"Steps/Episode: {steps_per_episode}")
+    print(f"Base accounts: {num_base_accounts}")
+    print(f"Device: {device}")
+    
+    try:
+        import torch
+        from collections import deque
+        import time
+        
+        # Check CUDA
+        if device == 'cuda' and not torch.cuda.is_available():
+            print("Warning: CUDA not available, falling back to CPU")
+            device = 'cpu'
+        
+        # Create environment
+        print("\n[1/4] Creating adversarial environment...")
+        env = create_adversarial_env(
+            num_base_accounts=num_base_accounts,
+            seed=42,
+            device=device
+        )
+        
+        # Create agent
+        print("[2/4] Initializing PPO agent...")
+        agent = AdversarialPatternAgent(
+            state_dim=49,
+            hidden_dim=128,
+            lr=3e-4,
+            device=device
+        )
+        
+        # Training metrics
+        episode_rewards = deque(maxlen=100)
+        episode_detections = deque(maxlen=100)
+        
+        print(f"[3/4] Training for {num_episodes} episodes...")
+        start_time = time.time()
+        
+        for episode in range(1, num_episodes + 1):
+            state = env.reset()
+            episode_reward = 0
+            detection_rates = []
+            
+            for step in range(steps_per_episode):
+                action_dict, raw_output = agent.select_action(state)
+                next_state, reward, done, info = env.step(action_dict)
+                agent.store_experience(state, raw_output, reward, done)
+                
+                episode_reward += reward
+                detection_rates.append(info['mean_detection'])
+                state = next_state
+                
+                if done:
+                    break
+            
+            # Update detection history
+            mean_detection = np.mean(detection_rates) if detection_rates else 0.5
+            agent.update_detection_history(mean_detection)
+            
+            episode_rewards.append(episode_reward)
+            episode_detections.append(mean_detection)
+            
+            # PPO update every 10 episodes or when buffer is reasonably full
+            if len(agent.buffer) >= 128 or episode == num_episodes:
+                agent.update(epochs=4, batch_size=64)
+            
+            # Progress logging
+            if episode % 10 == 0 or episode == num_episodes:
+                avg_reward = np.mean(episode_rewards)
+                avg_detection = np.mean(episode_detections)
+                elapsed = time.time() - start_time
+                print(f"  Episode {episode:4d}/{num_episodes} | "
+                      f"Reward: {avg_reward:7.3f} | "
+                      f"Detection: {avg_detection:.3f} | "
+                      f"Time: {elapsed:.1f}s")
+        
+        # Save model
+        print(f"[4/4] Saving agent to '{save_path}'...")
+        ensure_models_dir()
+        agent.save(save_path)
+        
+        # Save metadata
+        metadata = {
+            'num_episodes': num_episodes,
+            'steps_per_episode': steps_per_episode,
+            'num_base_accounts': num_base_accounts,
+            'final_avg_reward': float(np.mean(episode_rewards)),
+            'final_avg_detection': float(np.mean(episode_detections)),
+            'trained_at': datetime.now().isoformat()
+        }
+        metadata_path = save_path.replace('.pt', '_metadata.json')
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        print(f"\n✅ Adversarial agent trained and saved!")
+        print(f"   Final avg reward: {np.mean(episode_rewards):.3f}")
+        print(f"   Final avg detection: {np.mean(episode_detections):.3f}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Adversarial training failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def save_consolidation_config(weights=None):
     """
     Save risk consolidation configuration.
@@ -356,13 +499,14 @@ def save_consolidation_config(weights=None):
     return True
 
 
-def train_all(epochs=15, gbdt_samples=5000):
+def train_all(epochs=15, gbdt_samples=5000, adversarial_episodes=0):
     """
     Train all models in the AML pipeline.
     
     Args:
         epochs: Epochs for neural models (LSTM, GNN, Sequence)
         gbdt_samples: Number of samples for GBDT training
+        adversarial_episodes: Episodes for adversarial agent (0 to skip)
     """
     print("\n" + "="*60)
     print("AML MODEL TRAINING PIPELINE")
@@ -386,6 +530,16 @@ def train_all(epochs=15, gbdt_samples=5000):
     
     # Train Sequence Detector (optional)
     results['sequence'] = train_sequence_model(epochs=max(5, epochs//3))
+    
+    # Train Adversarial Agent (optional - for red-teaming)
+    if adversarial_episodes > 0:
+        results['adversarial'] = train_adversarial_agent(
+            num_episodes=adversarial_episodes,
+            steps_per_episode=10,
+            num_base_accounts=300
+        )
+    else:
+        results['adversarial'] = None  # Skipped
     
     # Save consolidation config
     results['consolidation'] = save_consolidation_config()
@@ -412,17 +566,19 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python train.py                     # Train all models
-  python train.py --model lstm        # Train only LSTM
-  python train.py --model gbdt        # Train only GBDT
-  python train.py --epochs 20         # Custom epochs
-  python train.py --samples 10000     # Custom GBDT samples
+  python train.py                        # Train all models
+  python train.py --model lstm           # Train only LSTM
+  python train.py --model gbdt           # Train only GBDT
+  python train.py --model adversarial    # Train adversarial agent
+  python train.py --epochs 20            # Custom epochs
+  python train.py --samples 10000        # Custom GBDT samples
+  python train.py --adversarial 100      # Include adversarial (100 episodes)
         """
     )
     
     parser.add_argument(
         '--model', 
-        choices=['all', 'lstm', 'gbdt', 'gnn', 'sequence', 'config'],
+        choices=['all', 'lstm', 'gbdt', 'gnn', 'sequence', 'config', 'adversarial'],
         default='all',
         help='Which model to train (default: all)'
     )
@@ -441,10 +597,26 @@ Examples:
         help='Number of samples for GBDT training (default: 5000)'
     )
     
+    parser.add_argument(
+        '--adversarial',
+        type=int,
+        default=0,
+        help='Adversarial agent episodes (0 to skip, default: 0)'
+    )
+    
+    parser.add_argument(
+        '--device',
+        type=str,
+        default='cpu',
+        choices=['cpu', 'cuda'],
+        help='Device for adversarial training (default: cpu)'
+    )
+    
     args = parser.parse_args()
     
     if args.model == 'all':
-        train_all(epochs=args.epochs, gbdt_samples=args.samples)
+        train_all(epochs=args.epochs, gbdt_samples=args.samples, 
+                  adversarial_episodes=args.adversarial)
     
     elif args.model == 'lstm':
         df, sim, analyzer, suspicious_set = generate_training_data()
@@ -461,6 +633,16 @@ Examples:
     
     elif args.model == 'config':
         save_consolidation_config()
+    
+    elif args.model == 'adversarial':
+        # Default to 100 episodes if not specified
+        episodes = args.adversarial if args.adversarial > 0 else 100
+        train_adversarial_agent(
+            num_episodes=episodes,
+            steps_per_episode=10,
+            num_base_accounts=300,
+            device=args.device
+        )
 
 
 if __name__ == "__main__":

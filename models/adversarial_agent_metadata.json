@@ -1,0 +1,8 @@
+{
+  "num_episodes": 500,
+  "steps_per_episode": 10,
+  "num_base_accounts": 300,
+  "final_avg_reward": 7.17236339527161,
+  "final_avg_detection": 0.529199481010437,
+  "trained_at": "2026-01-11T15:28:05.148790"
+}

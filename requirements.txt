@@ -9,3 +9,4 @@ requests
 streamlit
 plotly
 lightgbm
+gymnasium>=0.29.0
