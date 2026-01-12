@@ -6,3 +6,9 @@ six
 torch
 redis==5.0.1
 apscheduler==3.10.4
+flask
+requests
+streamlit
+plotly
+lightgbm
+gymnasium>=0.29.0

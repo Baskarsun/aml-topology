@@ -97,9 +97,9 @@ def generate_synthetic_transactions(n: int = 20000, fraud_rate: float = 0.03, se
     np.random.seed(seed)
 
     rows = []
-    mcc_pool = ['5311', '5411', '6011', '7995', '4829', '4814']  # retail, grocery, atm, tech, utilities, telecom
-    countries = ['US', 'GB', 'NG', 'IN', 'CN']
-    iso_pain_types = ['pain.001', 'pain.002', 'pain.003']
+    mcc_pool = ['5311', '5411', '6011', '7995', '4829', '4814', '5732', '7011']  # Added simulator MCCs
+    countries = ['US', 'GB', 'NG', 'IN', 'CN', 'UK', 'RU', 'PK'] # Added simulator countries
+    payment_types = ['card', 'wire', 'ach', 'crypto']
 
     # simulate per-account recent activity counters for velocity
     account_last = {}
@@ -112,7 +112,7 @@ def generate_synthetic_transactions(n: int = 20000, fraud_rate: float = 0.03, se
         country = random.choice(countries)
         device_id = f'dev_{random.randint(1,5000)}'
         device_change = random.random() < 0.02
-        payment_type = random.choice(iso_pain_types)
+        payment_type = random.choice(payment_types)
         ip_risk = random.random()  # 0-1
 
         # base fraud label low
@@ -126,6 +126,10 @@ def generate_synthetic_transactions(n: int = 20000, fraud_rate: float = 0.03, se
             device_change = True
             ip_risk = random.uniform(0.7, 1.0)
             is_fraud = True
+            # Simulate high risk attributes from simulator
+            if random.random() < 0.5:
+                payment_type = 'crypto'
+                country = random.choice(['RU', 'NG', 'PK'])
 
         # velocity features
         last = account_last.get(acct, {'count_1h': 0, 'sum_24h': 0.0, 'unique_payees_24h': set()})
@@ -136,7 +140,7 @@ def generate_synthetic_transactions(n: int = 20000, fraud_rate: float = 0.03, se
         account_last[acct] = {'count_1h': count_1h, 'sum_24h': sum_24h, 'unique_payees_24h': last['unique_payees_24h']}
 
         # target label additional heuristics
-        if amount > 10000 and (device_change or ip_risk > 0.6):
+        if (amount > 10000 and (device_change or ip_risk > 0.6)) or (payment_type == 'crypto' and amount > 5000):
             is_fraud = True
 
         rows.append({
@@ -183,7 +187,7 @@ def featurize(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
     return df2[features], {'mcc_map': mcc_map, 'pay_map': pay_map}
 
 
-def save_gbdt_model(model, lib: str, metrics: dict = None, feature_names: list = None):
+def save_gbdt_model(model, lib: str, metrics: dict = None, feature_names: list = None, maps: dict = None):
     """Save GBDT model weights and metadata to disk."""
     models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
     os.makedirs(models_dir, exist_ok=True)
@@ -216,6 +220,8 @@ def save_gbdt_model(model, lib: str, metrics: dict = None, feature_names: list =
         metadata['feature_names'] = feature_names
     if metrics:
         metadata['metrics'] = metrics
+    if maps:
+        metadata['maps'] = maps
     
     metadata_path = os.path.join(models_dir, 'gbdt_metadata.json')
     with open(metadata_path, 'w') as f:
@@ -259,7 +265,7 @@ def load_gbdt_model():
     return model, metadata
 
 
-def train_gbdt(X: pd.DataFrame, y: pd.Series, lib: str = None, save_model_flag: bool = True):
+def train_gbdt(X: pd.DataFrame, y: pd.Series, lib: str = None, save_model_flag: bool = True, maps: dict = None):
     lib = lib or GBDT_LIB
     print(f"Using GBDT library: {lib}")
     X_train, X_test, y_train, y_test = train_test_split_manual(X, y, test_size=0.2, random_state=42, stratify=y.values if hasattr(y, 'values') else y)
@@ -347,7 +353,7 @@ def train_gbdt(X: pd.DataFrame, y: pd.Series, lib: str = None, save_model_flag: 
                 'auc': float(auc) if auc is not None else None
             }
             feature_names = ['amt_log', 'mcc_enc', 'payment_type_enc', 'device_change', 'ip_risk', 'count_1h', 'sum_24h', 'uniq_payees_24h', 'is_international', 'avg_tx_24h', 'velocity_score']
-            save_gbdt_model(model, lib, metrics, feature_names)
+            save_gbdt_model(model, lib, metrics, feature_names, maps)
         except Exception as e:
             print(f'Failed to save GBDT model: {e}')
 
@@ -415,7 +421,7 @@ def demo_run(n: int = 20000, save_model_flag: bool = True):
     df = generate_synthetic_transactions(n=n)
     X, maps = featurize(df)
     y = df['label']
-    model, meta = train_gbdt(X, y, save_model_flag=save_model_flag)
+    model, meta = train_gbdt(X, y, save_model_flag=save_model_flag, maps=maps)
 
 
 if __name__ == '__main__':

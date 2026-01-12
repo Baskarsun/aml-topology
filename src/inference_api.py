@@ -16,7 +16,12 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-import torch
+try:
+    import torch
+    _HAS_TORCH = True
+except ImportError:
+    _HAS_TORCH = False
+    print("Warning: Torch not installed. Sequence Detector will be disabled.")
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
 
@@ -35,8 +40,23 @@ except ImportError:
     print("Warning: Flask not installed. Install with: pip install flask")
 
 from src.gbdt_detector import load_gbdt_model, score_transaction
-from src.sequence_detector import load_sequence_model, SequenceDataset, EVENT2IDX
-from src.lstm_link_predictor import load_model as load_lstm_model
+try:
+    from src.sequence_detector import load_sequence_model, SequenceDataset, EVENT2IDX
+    _HAS_SEQUENCE = True
+except ImportError:
+    _HAS_SEQUENCE = False
+    print("Warning: Sequence Detector not available (missing dependencies).")
+    # minimal mocks if needed or just handle None later
+    def load_sequence_model(): return None, {}
+    SequenceDataset = None
+    EVENT2IDX = {}
+try:
+    from src.lstm_link_predictor import load_model as load_lstm_model
+    _HAS_LSTM = True
+except ImportError:
+    _HAS_LSTM = False
+    print("Warning: LSTM Link Predictor not available (missing dependencies).")
+    def load_lstm_model(path): return None, {}
 from src.risk_consolidator import RiskConsolidator
 from src.metrics_logger import get_metrics_logger
 from src.gnn_embedding_cache import get_gnn_cache
@@ -140,7 +160,8 @@ class InferenceEngine:
         
         try:
             # Score using GBDT
-            score = score_transaction(transaction, {}, self.models['gbdt'])
+            maps = self.metadata['gbdt'].get('maps', {})
+            score = score_transaction(transaction, maps, self.models['gbdt'])
             
             return {
                 'transaction': transaction,
@@ -162,6 +183,9 @@ class InferenceEngine:
         Returns:
             Dict with anomaly score and metadata
         """
+        if not _HAS_TORCH:
+            return {'error': 'Torch not installed'}
+            
         if self.models['sequence'] is None:
             return {'error': 'Sequence Detector not loaded'}
         
@@ -217,7 +241,8 @@ class InferenceEngine:
         # Score transaction with GBDT
         if self.models['gbdt'] is not None:
             try:
-                gbdt_score = score_transaction(transaction, {}, self.models['gbdt'])
+                maps = self.metadata['gbdt'].get('maps', {})
+                gbdt_score = score_transaction(transaction, maps, self.models['gbdt'])
                 results['component_scores']['gbdt'] = {
                     'score': float(gbdt_score),
                     'weight': self.consolidator.weights.get('cyber', 0.1),
