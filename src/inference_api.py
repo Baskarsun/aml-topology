@@ -39,6 +39,7 @@ from src.sequence_detector import load_sequence_model, SequenceDataset, EVENT2ID
 from src.lstm_link_predictor import load_model as load_lstm_model
 from src.risk_consolidator import RiskConsolidator
 from src.metrics_logger import get_metrics_logger
+from src.gnn_embedding_cache import get_gnn_cache
 
 # Try loading GNN (optional)
 try:
@@ -57,7 +58,19 @@ class InferenceEngine:
         self.metadata = {}
         self.consolidator = None
         self.feature_maps = {}
+        self.gnn_cache = None
         self.load_models()
+        
+        # Initialize GNN embedding cache
+        try:
+            self.gnn_cache = get_gnn_cache()
+            cache_stats = self.gnn_cache.get_stats()
+            print(f"✓ GNN Embedding Cache loaded")
+            print(f"  Embeddings available: {cache_stats['file_cache_size']}")
+            print(f"  Redis status: {'Connected' if cache_stats['redis_available'] else 'Offline'}")
+        except Exception as e:
+            print(f"✗ GNN Cache initialization failed: {e}")
+            self.gnn_cache = None
     
     def load_models(self):
         """Load all persisted models with error handling."""
@@ -182,7 +195,7 @@ class InferenceEngine:
     def consolidate_risks(self, transaction: Dict, events: List[str] = None, 
                          account_id: str = None) -> Dict:
         """
-        Consolidate GBDT + Sequence scores into final risk assessment.
+        Consolidate GBDT + Sequence + GNN scores into final risk assessment.
         
         Args:
             transaction: Transaction data for GBDT scoring
@@ -232,14 +245,79 @@ class InferenceEngine:
                     'status': 'failed'
                 }
         
-        # Compute final consolidated score
-        consolidated_score = self._compute_consolidated_score(
-            results['component_scores']
-        )
+        # === NEW: GNN EMBEDDING LOOKUP ===
+        gnn_score = 0.0
+        gnn_available = False
+        
+        if self.gnn_cache is not None and account_id:
+            try:
+                embedding = self.gnn_cache.get(account_id)
+                
+                if embedding is not None:
+                    # Compute risk score from embedding
+                    # Method 1: Use L2 norm (simple)
+                    gnn_score = float(np.linalg.norm(embedding))
+                    gnn_score = min(1.0, gnn_score / 10.0)  # Normalize to [0, 1]
+                    
+                    # Method 2: Use mean of embedding values
+                    # gnn_score = float(np.mean(np.abs(embedding)))
+                    
+                    gnn_available = True
+                    
+                    results['component_scores']['gnn'] = {
+                        'score': gnn_score,
+                        'weight': 0.35,  # High weight when available
+                        'status': 'success',
+                        'embedding_dim': len(embedding),
+                        'method': 'l2_norm'
+                    }
+            except Exception as e:
+                results['component_scores']['gnn'] = {
+                    'error': str(e),
+                    'status': 'failed'
+                }
+        
+        # === ADAPTIVE WEIGHT ADJUSTMENT ===
+        if gnn_available:
+            # GNN available: use GNN-heavy weights
+            weights = {
+                'gbdt': 0.20,
+                'sequence': 0.10,
+                'gnn': 0.40,       # High weight for GNN
+                'temporal': 0.20,
+                'lstm': 0.10
+            }
+        else:
+            # GNN unavailable: fallback weights
+            weights = {
+                'gbdt': 0.30,
+                'sequence': 0.20,
+                'gnn': 0.0,
+                'temporal': 0.30,
+                'lstm': 0.20
+            }
+        
+        # === COMPUTE FINAL SCORE ===
+        consolidated_score = 0.0
+        total_weight = 0.0
+        
+        for component, data in results['component_scores'].items():
+            if data.get('status') == 'success' and 'score' in data:
+                score = data['score']
+                weight = weights.get(component, 0.0)
+                consolidated_score += score * weight
+                total_weight += weight
+        
+        if total_weight > 0:
+            consolidated_score /= total_weight
+        
+        consolidated_score = min(1.0, max(0.0, consolidated_score))
         
         results['consolidated_risk_score'] = consolidated_score
         results['risk_level'] = self._score_to_risk_level(consolidated_score)
         results['recommendation'] = self._get_recommendation(consolidated_score)
+        results['gnn_enhanced'] = gnn_available
+        results['weights_used'] = weights
         
         return results
     
@@ -287,7 +365,7 @@ class InferenceEngine:
     
     def health_check(self) -> Dict:
         """Return status of loaded models."""
-        return {
+        health_data = {
             'status': 'healthy' if self.models.get('gbdt') else 'degraded',
             'timestamp': datetime.now().isoformat(),
             'models_loaded': {
@@ -300,6 +378,30 @@ class InferenceEngine:
             'metadata': {k: {**v, 'timestamp': str(v.get('timestamp', 'N/A'))} 
                         for k, v in self.metadata.items()}
         }
+        
+        # Add GNN cache stats
+        if self.gnn_cache is not None:
+            try:
+                cache_stats = self.gnn_cache.get_stats()
+                health_data['gnn_cache'] = {
+                    'available': True,
+                    'redis_connected': cache_stats['redis_available'],
+                    'embeddings_count': cache_stats['file_cache_size'],
+                    'embedding_dim': cache_stats['embedding_dim'],
+                    'last_update': cache_stats['last_update']
+                }
+            except Exception as e:
+                health_data['gnn_cache'] = {
+                    'available': False,
+                    'error': str(e)
+                }
+        else:
+            health_data['gnn_cache'] = {
+                'available': False,
+                'reason': 'Cache not initialized'
+            }
+        
+        return health_data
 
 
 def create_app(inference_engine: InferenceEngine = None) -> Flask:

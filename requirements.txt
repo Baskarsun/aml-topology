@@ -4,3 +4,5 @@ matplotlib
 numpy
 six
 torch
+redis==5.0.1
+apscheduler==3.10.4
