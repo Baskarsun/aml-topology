@@ -1,0 +1,409 @@
+"""
+Account Detail Page
+====================
+New page providing a full per-account investigation view.
+
+Features:
+  ✓ Account selector from simulation results with risk tier and alert-state badges
+  ✓ Overview table of all accounts when none selected
+  ✓ Risk score gauge (colour-coded with score bar)
+  ✓ Active-signals breakdown with per-phase attribution
+  ✓ Alert management: status dropdown + investigation notes (persisted via alert_store)
+  ✓ Transaction timeline chart (incoming vs outgoing, filterable by date range)
+  ✓ Counterparty mini-graph (interactive Plotly, colour-coded by tier)
+  ✓ All charts use plotly_dark theme for visual consistency
+"""
+import os
+import sys
+from datetime import datetime, timedelta
+
+import networkx as nx
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from src.alert_store import get_alert_state, get_all_states, set_alert_state
+
+TIER_COLORS = {
+    "CRITICAL": "#FF2B2B",
+    "HIGH":     "#FF6B35",
+    "MEDIUM":   "#FFB800",
+    "LOW":      "#00FF94",
+    "CLEAN":    "#555555",
+}
+TIER_SYMBOLS = {"CRITICAL": "▲", "HIGH": "▲", "MEDIUM": "◆", "LOW": "✓", "CLEAN": "○"}
+STATE_ICONS  = {
+    "Unreviewed":   "",
+    "Investigating": "🔵 ",
+    "False Positive": "✅ ",
+    "Escalated":    "🔴 ",
+}
+STATES       = ["Unreviewed", "Investigating", "False Positive", "Escalated"]
+
+# Mapping from signal keyword → (icon, phase name, colour)
+_PHASE_SIGNAL_MAP = {
+    "fan_in":       ("🕸️", "Graph Topology",  "#FFB800"),
+    "fan_out":      ("🕸️", "Graph Topology",  "#FFB800"),
+    "cycle":        ("🕸️", "Graph Topology",  "#FF2B2B"),
+    "bridge":       ("🕸️", "Graph Topology",  "#FFB800"),
+    "cyber":        ("🔐", "Behavioral",       "#FFB800"),
+    "login":        ("🔐", "Behavioral",       "#FFB800"),
+    "travel":       ("🔐", "Behavioral",       "#FF2B2B"),
+    "risk_esc":     ("⏰", "Temporal",         "#FF2B2B"),
+    "temporal":     ("⏰", "Temporal",         "#FFB800"),
+    "volume":       ("⏰", "Temporal",         "#FFB800"),
+    "structuring":  ("⏰", "Temporal",         "#FF2B2B"),
+    "lstm":         ("🔗", "LSTM",             "#00FFFF"),
+    "emerging":     ("🔗", "LSTM",             "#00FFFF"),
+    "link_pred":    ("🔗", "LSTM",             "#00FFFF"),
+    "gbdt":         ("📈", "GBDT",             "#FFB800"),
+    "gnn":          ("🧠", "GNN",              "#00FFFF"),
+}
+
+
+def _signal_meta(sig: str):
+    sig_low = sig.lower()
+    for key, meta in _PHASE_SIGNAL_MAP.items():
+        if key in sig_low:
+            return meta
+    return ("⚠️", "Unknown", "#888888")
+
+
+# ── Data loaders ───────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=60)
+def _load_sim() -> pd.DataFrame | None:
+    for path in ["simulation_pipeline_results.csv", "consolidated_risk_scores.csv"]:
+        if os.path.exists(path):
+            return pd.read_csv(path)
+    return None
+
+
+@st.cache_data(ttl=60)
+def _load_tx() -> pd.DataFrame | None:
+    if not os.path.exists("transactions.csv"):
+        return None
+    df = pd.read_csv("transactions.csv")
+    if "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    return df
+
+
+# ── Sidebar ────────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### ⚙️ Account Controls")
+    date_from = st.date_input("Timeline From",
+                               datetime.utcnow().date() - timedelta(days=30))
+    date_to   = st.date_input("Timeline To", datetime.utcnow().date())
+
+# ── Header ─────────────────────────────────────────────────────────────────────
+st.markdown("# 🔍 Account Detail")
+st.caption(
+    "Deep-dive into a single account: risk breakdown, active signals, "
+    "transaction timeline, counterparty network, and alert management."
+)
+
+# ── Load data ──────────────────────────────────────────────────────────────────
+sim_df = _load_sim()
+tx_df  = _load_tx()
+
+if sim_df is None:
+    st.warning(
+        "No simulation results found. "
+        "Run `python pipeline_simulation.py` first."
+    )
+    st.stop()
+
+acc_col   = "account_id" if "account_id" in sim_df.columns else sim_df.columns[0]
+accounts  = sorted(sim_df[acc_col].dropna().astype(str).unique().tolist())
+all_states = get_all_states()
+
+
+def _acc_label(acc: str) -> str:
+    st_info  = all_states.get(acc, {})
+    icon     = STATE_ICONS.get(st_info.get("state", "Unreviewed"), "")
+    tier_tag = ""
+    if "risk_level" in sim_df.columns:
+        row = sim_df[sim_df[acc_col].astype(str) == acc]
+        if len(row):
+            t = str(row.iloc[0]["risk_level"])
+            sym = TIER_SYMBOLS.get(t, "")
+            tier_tag = f"[{sym} {t}] " if sym else f"[{t}] "
+    return f"{icon}{tier_tag}{acc}"
+
+
+# ── Account selector ───────────────────────────────────────────────────────────
+selected = st.selectbox(
+    "Select Account",
+    options=["— select an account —"] + accounts,
+    format_func=lambda a: a if a == "— select an account —" else _acc_label(a),
+)
+
+# ── Overview table when no account selected ────────────────────────────────────
+if selected == "— select an account —":
+    st.markdown("### 📋 All Accounts Overview")
+    st.caption("Select an account above for the full investigation view.")
+
+    rows = []
+    for _, row in sim_df.iterrows():
+        acc = str(row.get(acc_col, ""))
+        st_info = all_states.get(acc, {})
+        rows.append({
+            "Account":       acc,
+            "Risk Level":    row.get("risk_level", "—"),
+            "Score":         round(float(row.get("score", 0)), 3)
+                             if "score" in row and pd.notna(row.get("score")) else "—",
+            "Alert Status":  st_info.get("state", "Unreviewed"),
+            "Last Updated":  st_info.get("updated_at", "—"),
+        })
+    ov_df = pd.DataFrame(rows)
+
+    def _style_ov(val):
+        c = TIER_COLORS.get(str(val), "")
+        return f"color:{c};font-weight:600" if c else ""
+
+    styled_ov = (
+        ov_df.style.map(_style_ov, subset=["Risk Level"])
+        if "Risk Level" in ov_df.columns
+        else ov_df
+    )
+    st.dataframe(styled_ov, use_container_width=True, hide_index=True)
+    st.stop()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Single account view
+# ═══════════════════════════════════════════════════════════════════════════════
+acc_rows = sim_df[sim_df[acc_col].astype(str) == selected]
+if acc_rows.empty:
+    st.error(f"Account `{selected}` not found in results.")
+    st.stop()
+
+acc_data    = acc_rows.iloc[0]
+risk_level  = str(acc_data.get("risk_level", "CLEAN"))
+risk_score  = float(acc_data.get("score", 0)) if "score" in acc_data and pd.notna(acc_data.get("score")) else 0.0
+signals_raw = str(acc_data.get("signals", "")) if "signals" in acc_data else ""
+tier_color  = TIER_COLORS.get(risk_level, "#888")
+tier_sym    = TIER_SYMBOLS.get(risk_level, "●")
+
+# ── Top row: score | signals | alert management ────────────────────────────────
+col_score, col_sigs, col_alert = st.columns([1, 2, 1])
+
+with col_score:
+    bar_pct = int(risk_score * 100)
+    st.markdown(
+        f'<div style="background:rgba(20,20,25,0.7);border:2px solid {tier_color}55;'
+        f'border-radius:16px;padding:24px;text-align:center">'
+        f'<div style="font-size:0.78rem;color:#777;text-transform:uppercase;'
+        f'letter-spacing:0.12em;margin-bottom:6px">Risk Level</div>'
+        f'<div style="font-size:2.6rem;font-weight:700;color:{tier_color};line-height:1">'
+        f'{tier_sym} {risk_level}</div>'
+        f'<div style="color:#888;font-size:1rem;margin-top:6px">'
+        f'Score: <b style="color:#ccc">{risk_score:.3f}</b></div>'
+        f'<div style="margin-top:14px;background:#111;border-radius:8px;height:7px">'
+        f'<div style="background:{tier_color};border-radius:8px;height:7px;'
+        f'width:{bar_pct}%;transition:width 0.4s ease"></div>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+
+with col_sigs:
+    st.markdown("**🔬 Active Signals**")
+    if signals_raw and signals_raw not in ("", "nan"):
+        signal_list = [s.strip() for s in signals_raw.split("|") if s.strip() and s.strip() != "nan"]
+        for sig in signal_list[:14]:
+            icon, phase, color = _signal_meta(sig)
+            st.markdown(
+                f'<div style="padding:4px 10px;margin:2px 0;border-radius:6px;'
+                f'background:rgba(0,0,0,0.3);border-left:3px solid {color};">'
+                f'{icon} <code style="color:{color};font-size:0.8rem">{sig}</code>'
+                f'<span style="color:#444;font-size:0.72rem"> ({phase})</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        if len(signal_list) > 14:
+            st.caption(f"… and {len(signal_list) - 14} more signals")
+    else:
+        st.success("No alert signals — this account is CLEAN.")
+
+with col_alert:
+    st.markdown("**📋 Alert Management**")
+    alert_info  = get_alert_state(selected)
+    current_st  = alert_info.get("state", "Unreviewed")
+    new_state   = st.selectbox(
+        "Status",
+        STATES,
+        index=STATES.index(current_st) if current_st in STATES else 0,
+        key="acct_state",
+    )
+    note_val = st.text_area(
+        "Investigation Notes",
+        value=alert_info.get("note", ""),
+        height=110,
+        key="acct_note",
+        placeholder="Add investigation notes, reference IDs, or disposition rationale…",
+    )
+    if st.button("💾 Save", type="primary", key="acct_save"):
+        set_alert_state(selected, new_state, note_val)
+        st.success(f"Saved: {new_state}", icon="✅")
+        # Update the local cache so the selector label refreshes
+        all_states[selected] = {"state": new_state, "note": note_val,
+                                  "updated_at": datetime.utcnow().isoformat()}
+    if alert_info.get("updated_at"):
+        st.caption(f"Last updated: {alert_info['updated_at'][:19]} UTC")
+
+st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+# ── Transaction Timeline ────────────────────────────────────────────────────────
+st.markdown("### 📅 Transaction Timeline")
+
+if tx_df is not None and "source" in tx_df.columns and "target" in tx_df.columns:
+    acc_tx = tx_df[
+        (tx_df["source"].astype(str) == selected) |
+        (tx_df["target"].astype(str) == selected)
+    ].copy()
+
+    if "timestamp" in acc_tx.columns:
+        acc_tx = acc_tx.dropna(subset=["timestamp"])
+        acc_tx = acc_tx[
+            (acc_tx["timestamp"].dt.date >= date_from) &
+            (acc_tx["timestamp"].dt.date <= date_to)
+        ]
+
+    if len(acc_tx) > 0:
+        acc_tx["direction"] = acc_tx.apply(
+            lambda r: "Outgoing" if str(r["source"]) == selected else "Incoming",
+            axis=1,
+        )
+
+        fig_tl = go.Figure()
+        for direction, color in [("Incoming", "#00FF94"), ("Outgoing", "#FF2B2B")]:
+            d = acc_tx[acc_tx["direction"] == direction]
+            if len(d) > 0 and "amount" in d.columns:
+                fig_tl.add_trace(go.Bar(
+                    x=d["timestamp"] if "timestamp" in d.columns else d.index,
+                    y=d["amount"],
+                    name=direction,
+                    marker_color=color,
+                    opacity=0.8,
+                    hovertemplate=f"{direction}: $%{{y:,.0f}}<br>%{{x}}<extra></extra>",
+                ))
+
+        fig_tl.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            barmode="group", height=300,
+            margin=dict(l=0, r=0, t=20, b=0),
+            xaxis=dict(showgrid=False, title="Date"),
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.07)",
+                       title="Amount ($)"),
+            legend=dict(orientation="h", y=1.12),
+            font=dict(family="system-ui"),
+        )
+        st.plotly_chart(fig_tl, use_container_width=True)
+
+        n_in  = len(acc_tx[acc_tx["direction"] == "Incoming"])
+        n_out = len(acc_tx[acc_tx["direction"] == "Outgoing"])
+        total_amt = acc_tx.get("amount", pd.Series(dtype=float)).sum() if "amount" in acc_tx.columns else 0
+        st.caption(
+            f"{len(acc_tx)} transactions in selected period  |  "
+            f"Incoming: {n_in}  |  Outgoing: {n_out}  |  "
+            f"Total volume: ${total_amt:,.0f}"
+        )
+    else:
+        st.info("No transactions found for this account in the selected date range.")
+else:
+    st.info(
+        "Transaction data not available. "
+        "Run `python main.py` to generate `transactions.csv`."
+    )
+
+# ── Counterparty Network ───────────────────────────────────────────────────────
+st.markdown("### 🕸️ Counterparty Network")
+
+if (tx_df is not None
+        and "source" in tx_df.columns
+        and "target" in tx_df.columns):
+
+    acc_tx_all = tx_df[
+        (tx_df["source"].astype(str) == selected) |
+        (tx_df["target"].astype(str) == selected)
+    ]
+
+    if len(acc_tx_all) > 0:
+        G_local = nx.DiGraph()
+        for _, r in acc_tx_all.iterrows():
+            G_local.add_edge(
+                str(r["source"]), str(r["target"]),
+                amount=float(r["amount"]) if "amount" in r and pd.notna(r["amount"]) else 0.0,
+            )
+
+        pos = nx.spring_layout(G_local, seed=42)
+
+        # Edges
+        ex, ey = [], []
+        for u, v in G_local.edges():
+            x0, y0 = pos[u]; x1, y1 = pos[v]
+            ex += [x0, x1, None]; ey += [y0, y1, None]
+
+        edge_tr = go.Scatter(
+            x=ex, y=ey, mode="lines",
+            line=dict(width=1, color="#2a2a2a"),
+            hoverinfo="none", showlegend=False,
+        )
+
+        # Nodes
+        node_colors, node_sizes, hover_labels = [], [], []
+        for n in G_local.nodes():
+            if str(n) == selected:
+                node_colors.append("#00FFFF")
+                node_sizes.append(22)
+                hover_labels.append(f"⭐ {n} (selected)")
+            else:
+                tier = "CLEAN"
+                if "risk_level" in sim_df.columns:
+                    match = sim_df[sim_df[acc_col].astype(str) == str(n)]
+                    if len(match):
+                        tier = str(match.iloc[0].get("risk_level", "CLEAN"))
+                node_colors.append(TIER_COLORS.get(tier, "#555"))
+                node_sizes.append(12)
+                sym = TIER_SYMBOLS.get(tier, "○")
+                hover_labels.append(f"{sym} {n} [{tier}]")
+
+        node_tr = go.Scatter(
+            x=[pos[n][0] for n in G_local.nodes()],
+            y=[pos[n][1] for n in G_local.nodes()],
+            mode="markers+text",
+            text=[str(n) for n in G_local.nodes()],
+            textposition="top center",
+            textfont=dict(size=8, color="#888"),
+            marker=dict(
+                size=node_sizes, color=node_colors,
+                line=dict(width=1, color="#333"),
+            ),
+            hovertext=hover_labels, hoverinfo="text",
+            showlegend=False,
+        )
+
+        fig_local = go.Figure(data=[edge_tr, node_tr])
+        fig_local.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(5,5,10,1)",
+            height=420, margin=dict(l=0, r=0, t=10, b=0),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            font=dict(family="system-ui"),
+        )
+        st.plotly_chart(fig_local, use_container_width=True)
+        st.caption(
+            f"Cyan = `{selected}` (selected account). "
+            "Other node colours = counterparty risk tier."
+        )
+    else:
+        st.info("No transaction connections found for this account.")
+else:
+    st.info("Transaction data not available for the counterparty graph.")

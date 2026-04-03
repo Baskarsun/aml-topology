@@ -875,8 +875,15 @@ def load_gnn_model(model_class=None):
         model_class = GraphSage
     
     models_dir = os.path.join(os.path.dirname(__file__), '..', 'models')
-    model_path = os.path.join(models_dir, 'gnn_model.pt')
-    metadata_path = os.path.join(models_dir, 'gnn_metadata.json')
+    
+    # Try to load adversarial GNN first, fallback to regular GNN
+    model_path = os.path.join(models_dir, 'gnn_adversarial.pt')
+    metadata_path = os.path.join(models_dir, 'gnn_adversarial_metadata.json')
+    
+    if not os.path.exists(model_path):
+        # Fallback to regular GNN model
+        model_path = os.path.join(models_dir, 'gnn_model.pt')
+        metadata_path = os.path.join(models_dir, 'gnn_metadata.json')
     
     if not os.path.exists(model_path) or not os.path.exists(metadata_path):
         raise FileNotFoundError(f'GNN model files not found in {models_dir}')
@@ -885,9 +892,15 @@ def load_gnn_model(model_class=None):
     with open(metadata_path, 'r') as f:
         metadata = json.load(f)
     
-    # Infer input features from metadata (default 8 for now, can be enhanced)
-    model = model_class(in_feats=8)
-    model.load_state_dict(torch.load(model_path, map_location='cpu'))
+    # Load the state dict first to infer the input size
+    state_dict = torch.load(model_path, map_location='cpu')
+    
+    # Infer in_feats from fc1.weight shape (which is [hidden, in_feats*2])
+    fc1_weight_shape = state_dict['fc1.weight'].shape
+    in_feats = fc1_weight_shape[1] // 2  # fc1 expects in_feats*2
+    
+    model = model_class(in_feats=in_feats)
+    model.load_state_dict(state_dict)
     model.eval()
     
     print(f'Loaded GNN model from {model_path}')

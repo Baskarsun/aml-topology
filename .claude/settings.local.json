@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l ./src/*.py ./main.py ./train.py ./inference.py)",
+      "Bash(xargs grep:*)",
+      "Bash(python -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(python -c \"import torch; print\\('torch', torch.__version__\\)\")",
+      "Bash(python -c \"import streamlit; print\\('streamlit', streamlit.__version__\\)\")",
+      "Bash(python -c \"import lightgbm; print\\('lightgbm', lightgbm.__version__\\)\")"
+    ]
+  }
+}

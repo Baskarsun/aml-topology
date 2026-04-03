@@ -23,13 +23,14 @@ class GNNEmbeddingCache:
                 host=redis_host, 
                 port=redis_port, 
                 decode_responses=False,
-                socket_connect_timeout=2
+                socket_connect_timeout=0.5,
+                socket_timeout=0.5
             )
             self.redis_client.ping()
             self.redis_available = True
             print(f"✓ GNN Cache: Connected to Redis at {redis_host}:{redis_port}")
         except Exception as e:
-            print(f"⚠️  GNN Cache: Redis unavailable ({e}), using file fallback")
+            print(f"⚠️  GNN Cache: Redis unavailable, using file fallback")
             self.redis_client = None
         
         # Load fallback cache from file

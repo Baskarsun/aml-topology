@@ -1,0 +1,249 @@
+Here is the complete UI analysis with improvement suggestions:
+
+  ---
+  UI Analysis: AML Topology Detection System
+
+  There are three UI surfaces: dashboard.py (FRAUD.GUARD monitor), pipeline_dashboard.py (animated pipeline visualizer), and src/visualizer.py (static graph
+  renderer). Each has distinct issues.
+
+  ---
+  1. dashboard.py — FRAUD.GUARD Monitor
+
+  1.1 Blocking auto-refresh
+
+  time.sleep(refresh_interval) at the bottom of the script is called on Streamlit's main thread. This freezes the entire UI — including interaction with controls
+  — for the duration of the sleep before rerunning. The sidebar controls are unresponsive during this window.
+
+  ▎ Suggestion: Replace the sleep+rerun pattern with st.rerun() triggered via st.fragment or a st_autorefresh component so the rest of the page remains
+  interactive during the wait.
+
+  ---
+  1.2 Sidebar collapsed by default, but contains critical controls
+
+  initial_sidebar_state="collapsed" hides the time window selector, live-update toggle, and refresh rate from first-time users. These are the primary controls for
+   the dashboard.
+
+  ▎ Suggestion: Set initial_sidebar_state="expanded" or surface the time window and refresh controls as inline controls in the main area rather than hiding them
+  in a sidebar.
+
+  ---
+  1.3 Hardcoded system metrics
+
+  The system status panel in the sidebar shows:
+  st.metric("CPU", "12%", "-2%")
+  st.metric("Mem", "4.2GB", "+0.1%")
+  These are static placeholder values — they never change and do not reflect actual system state.
+
+  ▎ Suggestion: Either wire these to real system metrics via psutil, or remove them entirely to avoid giving operators a false sense of observability.
+
+  ---
+  1.4 Risk Distribution chart — "Clean" slice is invisible
+
+  The donut chart passes colors['card_bg'] (rgba(255, 255, 255, 0.05)) as the colour for the "Clean" category. Against a dark background, this renders as nearly
+  invisible — the slice disappears.
+
+  ▎ Suggestion: Use a distinct, visible neutral colour (e.g. #444 or #888) for the Clean segment, consistent with pipeline_dashboard.py's colors['clean'].
+
+  ---
+  1.5 Latency chart colour logic is fragile
+
+  The fill colour for the latency chart is computed as:
+  fillcolor=f"rgba({100 if 'graph' in engine else 0}, {255 if 'forest' in engine else 100}, 200, 0.1)"
+  This depends on the engine name string containing "graph" or "forest". Any engine name change silently breaks the colour coding, and the logic produces only two
+   possible colours regardless of how many engines exist.
+
+  ▎ Suggestion: Use a fixed colour palette (e.g. Plotly's qualitative sequence) indexed by engine, rather than parsing engine names.
+
+  ---
+  1.6 No account-level drill-down
+
+  The "Live Inference Feed" table shows account IDs, risk scores, and tiers, but clicking a row does nothing. An investigator who sees HIGH risk on ACC_0042 has
+  no way to see which signals triggered the alert, the temporal trend, or the graph topology for that account from within the dashboard.
+
+  ▎ Suggestion: Add a selectbox or clickable row that loads a detail panel for the selected account, showing per-phase signal breakdown (spatial, temporal, LSTM,
+  GBDT scores), the Bayesian risk forecast, and a mini graph of that account's counterparties.
+
+  ---
+  1.7 No search, filter, or sort on the inference feed
+
+  The feed is capped at 20 rows with no way to filter by risk level or search for a specific account ID.
+
+  ▎ Suggestion: Add a st.text_input for account search and a st.multiselect for risk level filter above the table.
+
+  ---
+  1.8 No export
+
+  There is no way to download the risk table as a CSV from the dashboard.
+
+  ▎ Suggestion: Add st.download_button that exports the current filtered inference feed.
+
+  ---
+  1.9 delta parameter bug in metric_card()
+
+  if delta:
+      delta_color = "#00FF94" if delta.startswith("+") else "#FF2B2B"
+  When delta is "0", "0%", or "Active" (which doesn't start with +), this silently colours those values red — "Active" on the Throughput card is shown in red even
+   though it is a status label, not a negative number.
+
+  ▎ Suggestion: Either separate numeric deltas from status labels in the API, or check delta.startswith("-") explicitly for the red colour, defaulting everything
+  else to neutral.
+
+  ---
+  2. pipeline_dashboard.py — AML Pipeline Visualizer
+
+  2.1 Animated particles are purely decorative
+
+  The CSS animation of particles flowing across the pipeline track runs at a fixed 4-second loop with fixed delays, entirely independent of real throughput,
+  latency, or which phase is active. The animation creates an impression of "live data flowing" that does not correspond to reality.
+
+  ▎ Suggestion: Either remove the animation and use a real-time progress indicator per phase (e.g. a progress bar that fills when that phase is processing), or
+  make particle speed proportional to current throughput.
+
+  ---
+  2.2 Pipeline is missing GBDT and GNN phases
+
+  The six pipeline boxes are: Data Ingestion → Graph Topology → Behavioral → Temporal → LSTM → Risk Score.
+
+  The GBDT transaction scorer and GNN node classifier — two of the four trained ML models — are entirely absent from the pipeline visualisation, giving operators
+  an inaccurate picture of how many detection stages exist.
+
+  ▎ Suggestion: Add GBDT and GNN phase boxes. The pipeline should show all 8 phases that actually run, consistent with the architecture.
+
+  ---
+  2.3 Several indicator values are permanently hardcoded
+
+  In the Phase Indicators Detail section:
+  - Login Anomalies: 0 — hardcoded, never populated.
+  - High Probability: - (under LSTM) — placeholder never replaced.
+  - avg_latency_ms: 25.0  # Default estimate — a guess used when the DB is empty.
+
+  ▎ Suggestion: Either populate these from real data, or label them N/A with a tooltip explaining why data is unavailable, rather than showing fixed numbers that
+  imply real readings.
+
+  ---
+  2.4 Results table shows only 15 rows with no pagination or search
+
+  sim_results.head(15) is hardcoded. On datasets with hundreds of accounts, 93% of results are hidden with no way to see more.
+
+  ▎ Suggestion: Use st.dataframe with height set to a scrollable size, or add a slider for how many rows to display.
+
+  ---
+  2.5 No auto-refresh
+
+  Unlike dashboard.py, pipeline_dashboard.py has no refresh mechanism. Data loaded from CSV on startup becomes stale immediately when a new pipeline run produces
+  updated files.
+
+  ▎ Suggestion: Add the same time-based rerun mechanism (corrected from the blocking issue in dashboard.py) so the pipeline view updates automatically.
+
+  ---
+  2.6 Risk drip animation is not proportional to actual risk distribution
+
+  Five drip elements are positioned at fixed percentages (10%, 30%, 50%, 70%, 90%) in fixed colours regardless of how many high/medium/low/clean accounts were
+  actually detected.
+
+  ▎ Suggestion: Generate drip elements dynamically — count and proportion of drip colours should reflect the actual risk distribution from kpi_stats.
+
+  ---
+  2.7 Sidebar toggles add complexity without user value
+
+  Four checkboxes (Show Animation, Show Phase Indicators, Show KPI Metrics, Show Risk Drips) let users hide entire sections of the dashboard. These read like
+  debugging flags left in from development, not controls an AML investigator would use.
+
+  ▎ Suggestion: Remove them and keep the full layout always visible. Use collapsible st.expander sections if individual sections need to be toggled.
+
+  ---
+  3. src/visualizer.py — Static Graph Renderer
+
+  3.1 Static PNG output with no interactivity
+
+  plot_graph() saves a PNG file. An AML investigator examining a network cannot zoom, pan, click a node to see transaction amounts/timestamps, or highlight a path
+   between two accounts. Matplotlib output is fundamentally unsuitable for investigation workflows.
+
+  ▎ Suggestion: Replace or complement with an interactive renderer — Pyvis (Network) outputs self-contained HTML, or plotly.graph_objects.Scatter on the NetworkX
+  positions. Either would integrate directly into Streamlit without a file-save step.
+
+  ---
+  3.2 Binary colour scheme loses risk-level information
+
+  Nodes are either lightblue (normal) or red (suspicious). The visualizer has no concept of risk tiers, so a CRITICAL account and a LOW-risk account flagged by a
+  single weak signal look identical.
+
+  ▎ Suggestion: Map node colour to risk tier: red = CRITICAL, orange = HIGH, yellow = MEDIUM, lightblue = clean. Additionally, use a third colour (e.g. orange or
+  distinct shape) for bridge nodes, which currently have no visual distinction.
+
+  ---
+  3.3 Edge labels and weights are absent
+
+  Edges carry amount, timestamp, and type attributes in the graph, but none of these are rendered. For AML investigation the transaction amount and direction on
+  each edge are the primary data points.
+
+  ▎ Suggestion: Render edge weights (amounts) as edge labels or encode amount as edge thickness. At minimum, show transaction direction clearly via arrowheads
+  (already present but alpha=0.5 makes them faint).
+
+  ---
+  3.4 No legend
+
+  The output PNG has no legend explaining what red vs. blue nodes mean. A standalone image sent in a report is uninterpretable without context.
+
+  ▎ Suggestion: Add a matplotlib legend with coloured patches for each node category.
+
+  ---
+  3.5 live_plot() is not integrated into the dashboard
+
+  The function exists with hover-tooltip logic, but it uses plt.ion() which requires a display server and cannot run in a headless Streamlit process. It is
+  effectively dead code in the production context.
+
+  ▎ Suggestion: Either integrate it into the Streamlit dashboard using st.pyplot with a frame-iteration loop, or replace it with a Plotly-based animation that
+  Streamlit can render natively.
+
+  ---
+  4. Cross-Cutting / UX Issues
+
+  4.1 Two dashboards with separate branding and no navigation
+
+  dashboard.py is branded "FRAUD.GUARD | AML Monitor" and pipeline_dashboard.py is "AML Pipeline Visualizer". They are launched separately and have no links
+  between them. A user must know both exist and run both commands.
+
+  ▎ Suggestion: Merge them into a multi-page Streamlit app using st.Page / st.navigation (Streamlit 1.36+), with tabs or a sidebar nav: Monitor, Pipeline, Graph
+  Explorer, Account Detail.
+
+  ---
+  4.2 No alert management workflow
+
+  An investigator can see that ACC_0042 is CRITICAL but has no way to record that they reviewed it, mark it as a false positive, or escalate it. Every refresh
+  shows the same alerts with no audit trail.
+
+  ▎ Suggestion: Add a lightweight alert state column — a st.selectbox per row in the table (or a detail panel) with states: Unreviewed / Investigating / False
+  Positive / Escalated. Persist state to a local SQLite table or CSV.
+
+  ---
+  4.3 No date-range or historical view
+
+  Both dashboards only expose a rolling-minutes time window. There is no way to look at "what happened last Tuesday" or compare two time periods.
+
+  ▎ Suggestion: Add a st.date_input range selector alongside the time-window slider.
+
+  ---
+  4.4 External font and icon CDN dependencies
+
+  Both dashboards import from fonts.googleapis.com and load icons from cdn-icons-png.flaticon.com. Financial institutions commonly restrict outbound internet from
+   analysis workstations, which would cause the font to fall back to system defaults and the icon to fail to load.
+
+  ▎ Suggestion: Bundle the font via a local static/ directory served by Streamlit, and replace the CDN icon with an SVG inline or an emoji fallback.
+
+  ---
+  4.5 Accessibility — colour-only risk indication
+
+  Risk level is communicated solely by colour (red / orange / green). Users with red-green colour blindness cannot distinguish HIGH from LOW alerts in the donut
+  chart or the table.
+
+  ▎ Suggestion: Add a text badge or icon alongside colour in all risk-level columns and chart labels (e.g. ● HIGH, ▲ MEDIUM, ✓ LOW).
+
+  ---
+  4.6 No manual transaction submission UI
+
+  The Flask API exposes /score/transaction but there is no form in either dashboard to submit a single transaction for immediate scoring. Operators who want to
+  test a specific account or transaction must use cURL or the inference_client.py script directly.
+
+  ▎ Suggestion: Add a "Manual Score" panel with input fields for source, target, amount, and timestamp, which POSTs to the inference API and displays the result
+  inline.

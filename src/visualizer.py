@@ -1,7 +1,8 @@
 import networkx as nx
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import time
-from typing import Iterable, Callable, Optional
+from typing import Iterable, Callable, Optional, Dict
 
 
 def plot_graph(G, suspicious_nodes=None, filename="transaction_network.png"):
@@ -224,6 +225,247 @@ def live_plot(graph_generator: Iterable[nx.Graph],
     finally:
         plt.ioff()
         plt.close(fig)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Interactive Plotly graph (replaces static PNG for dashboard / Streamlit use)
+# ──────────────────────────────────────────────────────────────────────────────
+
+#: Risk-tier colour map — 5 tiers, each with a distinct colour AND a text symbol
+#: so the visualisation is accessible to colour-blind users.
+TIER_COLORS = {
+    "CRITICAL": "#FF2B2B",
+    "HIGH":     "#FF6B35",
+    "MEDIUM":   "#FFB800",
+    "LOW":      "#00FF94",
+    "CLEAN":    "#555555",
+}
+TIER_SYMBOLS = {
+    "CRITICAL": "▲",
+    "HIGH":     "●",
+    "MEDIUM":   "◆",
+    "LOW":      "✓",
+    "CLEAN":    "○",
+}
+_TIER_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "CLEAN"]
+
+
+def build_plotly_graph(
+    G: nx.Graph,
+    node_risks: Optional[Dict[str, dict]] = None,
+    suspicious_nodes=None,
+    highlight_node: Optional[str] = None,
+    show_labels: bool = True,
+    height: int = 600,
+    layout_seed: int = 42,
+):
+    """
+    Build an **interactive** Plotly figure from a NetworkX graph.
+
+    This replaces the static PNG produced by :func:`plot_graph` for contexts
+    where interactivity (pan, zoom, hover) is available, such as Streamlit or
+    a Jupyter notebook.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Any NetworkX graph (directed or undirected).
+    node_risks : dict, optional
+        Mapping ``{node_id: {"tier": str, "score": float}}``.
+        Tiers: ``"CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "CLEAN"``.
+        When provided, nodes are coloured by tier.
+    suspicious_nodes : iterable, optional
+        Fallback when *node_risks* is not provided.  Nodes in this set are
+        rendered as ``"HIGH"``; all others as ``"CLEAN"``.
+    highlight_node : str, optional
+        A single node to draw with a bright white border.
+    show_labels : bool
+        Show node-ID text labels.  Automatically suppressed for graphs with
+        more than 80 nodes regardless of this flag.
+    height : int
+        Chart height in pixels.
+    layout_seed : int
+        Random seed for the spring-layout algorithm.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        raise ImportError(
+            "plotly is required for build_plotly_graph. "
+            "Install it with: pip install plotly"
+        )
+
+    # Build a fallback risk map from suspicious_nodes if node_risks not given
+    if node_risks is None:
+        suspicious = set(suspicious_nodes or [])
+        node_risks = {
+            str(n): {"tier": "HIGH" if n in suspicious else "CLEAN", "score": 0.0}
+            for n in G.nodes()
+        }
+
+    pos = nx.spring_layout(G, k=0.85, seed=layout_seed, iterations=60)
+
+    # ── Edge trace (single trace; no per-edge hover needed here) ───────────────
+    edge_x, edge_y = [], []
+    for u, v in G.edges():
+        x0, y0 = pos[u]
+        x1, y1 = pos[v]
+        edge_x += [x0, x1, None]
+        edge_y += [y0, y1, None]
+
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        mode="lines",
+        line=dict(width=0.7, color="#2a2a2a"),
+        hoverinfo="none",
+        showlegend=False,
+    )
+
+    # ── Node traces — one per tier so Plotly renders a proper legend ───────────
+    node_traces = []
+    _auto_labels = show_labels and len(G.nodes()) <= 80
+
+    for tier in _TIER_ORDER:
+        nodes_t = [n for n in G.nodes()
+                   if node_risks.get(str(n), {}).get("tier", "CLEAN") == tier]
+        if not nodes_t:
+            continue
+
+        xs    = [pos[n][0] for n in nodes_t]
+        ys    = [pos[n][1] for n in nodes_t]
+        sizes = [min(35, max(10, 10 + G.degree(n) * 2)) for n in nodes_t]
+
+        border_colors = [
+            "#FFFFFF" if str(n) == str(highlight_node) else TIER_COLORS[tier]
+            for n in nodes_t
+        ]
+        border_widths = [
+            4 if str(n) == str(highlight_node) else 1
+            for n in nodes_t
+        ]
+
+        hover_texts = []
+        for n in nodes_t:
+            info  = node_risks.get(str(n), {})
+            in_d  = G.in_degree(n)  if G.is_directed() else G.degree(n)
+            out_d = G.out_degree(n) if G.is_directed() else G.degree(n)
+            hover_texts.append(
+                f"<b>{n}</b><br>"
+                f"Tier: {TIER_SYMBOLS.get(tier,'')} {tier}<br>"
+                f"Score: {info.get('score', 0):.3f}<br>"
+                f"In: {in_d}  |  Out: {out_d}"
+            )
+
+        node_traces.append(go.Scatter(
+            x=xs, y=ys,
+            mode="markers+text" if _auto_labels else "markers",
+            text=[str(n) for n in nodes_t],
+            textposition="top center",
+            textfont=dict(size=8, color="#999"),
+            hovertext=hover_texts, hoverinfo="text",
+            marker=dict(
+                size=sizes,
+                color=TIER_COLORS[tier],
+                line=dict(width=border_widths, color=border_colors),
+            ),
+            name=f"{TIER_SYMBOLS.get(tier,'')} {tier}",
+        ))
+
+    fig = go.Figure(data=[edge_trace] + node_traces)
+    fig.update_layout(
+        showlegend=True,
+        hovermode="closest",
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(5,5,10,1)",
+        height=height,
+        margin=dict(l=0, r=0, t=10, b=0),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, showline=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, showline=False),
+        legend=dict(
+            bgcolor="rgba(10,10,15,0.85)",
+            bordercolor="#333", borderwidth=1,
+            font=dict(color="#ccc", size=12),
+            title=dict(text="Risk Tier", font=dict(color="#666")),
+        ),
+        font=dict(family="system-ui, sans-serif"),
+        dragmode="pan",
+    )
+    return fig
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Updated static plot_graph — now includes legend and risk-tier colours
+# ──────────────────────────────────────────────────────────────────────────────
+
+def plot_graph_with_tiers(
+    G: nx.Graph,
+    node_risks: Optional[Dict[str, dict]] = None,
+    suspicious_nodes=None,
+    filename: str = "transaction_network.png",
+):
+    """
+    Enhanced static PNG graph visualisation with:
+      - 5-tier risk colouring (not just red vs blue)
+      - Node size proportional to degree
+      - Edge labels for transaction amounts (when available)
+      - Legend identifying each tier by colour AND text symbol
+    """
+    tier_color_map = {
+        "CRITICAL": "red",
+        "HIGH":     "orangered",
+        "MEDIUM":   "gold",
+        "LOW":      "limegreen",
+        "CLEAN":    "lightblue",
+    }
+
+    if node_risks is None:
+        suspicious = set(suspicious_nodes or [])
+        node_risks = {
+            str(n): {"tier": "HIGH" if n in suspicious else "CLEAN"}
+            for n in G.nodes()
+        }
+
+    node_list   = list(G.nodes())
+    node_colors = [tier_color_map.get(node_risks.get(str(n), {}).get("tier", "CLEAN"), "lightblue")
+                   for n in node_list]
+    node_sizes  = [max(200, min(800, 200 + G.degree(n) * 40)) for n in node_list]
+
+    plt.figure(figsize=(14, 14))
+    pos = nx.spring_layout(G, k=0.2, iterations=30, seed=42)
+
+    nx.draw_networkx_nodes(G, pos, nodelist=node_list,
+                           node_color=node_colors, node_size=node_sizes, alpha=0.85)
+    nx.draw_networkx_edges(G, pos, width=0.6, alpha=0.4, arrows=True,
+                           arrowsize=12, edge_color="#666")
+    nx.draw_networkx_labels(G, pos, font_size=7, font_color="#333")
+
+    # Edge amount labels (if the graph carries 'amount' edge data)
+    edge_labels = {}
+    for u, v, data in G.edges(data=True):
+        if "amount" in data and data["amount"]:
+            edge_labels[(u, v)] = f"${data['amount']:,.0f}"
+    if edge_labels:
+        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=6)
+
+    # Legend
+    patches = [
+        mpatches.Patch(color=col, label=f"{TIER_SYMBOLS.get(tier,'')} {tier}")
+        for tier, col in tier_color_map.items()
+    ]
+    plt.legend(handles=patches, loc="upper left", fontsize=10,
+               framealpha=0.8, title="Risk Tier")
+
+    plt.title("AML Transaction Network", fontsize=14, pad=16)
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(filename, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Graph saved to {filename}")
 
 
 def graph_generator_from_dataframe(df, step: int = 50, cumulative: bool = True):

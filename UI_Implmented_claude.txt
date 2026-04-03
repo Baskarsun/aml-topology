@@ -1,0 +1,106 @@
+ What was implemented
+
+  New entry point
+
+  app.py — Unified multi-page Streamlit app (streamlit run app.py). Loads shared CSS (font, glassmorphism cards, risk-tier badges, accessible text symbols) once
+  for all pages. Uses st.navigation so navigation appears in the sidebar automatically.
+
+  ---
+  pages/monitor.py (replaces dashboard.py)
+
+  ┌───────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │               Issue               │                                                          Fix                                                          │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Blocking time.sleep()             │ @st.fragment(run_every=5) — only the live section reruns; sidebar stays interactive. Graceful fallback for Streamlit  │
+  │                                   │ <1.37                                                                                                                 │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Sidebar collapsed by default      │ initial_sidebar_state="expanded" in app.py                                                                            │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Hardcoded CPU/RAM                 │ psutil reads real values; shows "install psutil" message if not available                                             │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Donut "Clean" near-invisible      │ Changed to #555555 (clearly visible neutral grey)                                                                     │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Latency chart fragile colour      │ Indexed ENGINE_PALETTE array — no string-parsing, any engine name works                                               │
+  │ logic                             │                                                                                                                       │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ delta bug ("Active" coloured red) │ Completely rewritten _kpi_html() — labels and numeric deltas separated                                                │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Accessibility (colour-only risk)  │ All risk labels now include text symbol: ▲ HIGH, ◆ MEDIUM, ✓ LOW, ○ CLEAN                                             │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ No search/filter on feed          │ st.text_input account search + st.multiselect risk-level filter + date-range filter                                   │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ No export                         │ st.download_button exports filtered feed as timestamped CSV                                                           │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ No account drill-down             │ Selectbox opens risk-score trend chart + signal summary panel                                                         │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ No alert management               │ Status selectbox + notes textarea → persisted to SQLite via alert_store                                               │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ No manual transaction scoring     │ Expandable form POSTs to inference API; shows result inline                                                           │
+  └───────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  pages/pipeline.py (replaces pipeline_dashboard.py)
+
+  ┌─────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                  Issue                  │                                                  Fix                                                  │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Only 6 phases (GBDT + GNN missing)      │ All 8 phases now shown: Ingestion → Graph → Behavioral → Temporal → LSTM → GBDT → GNN → Consolidation │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Decorative particle CSS animation       │ Removed; replaced with real signal counts per phase                                                   │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Phase boxes always same style           │ Phase boxes highlight red border when they have active alerts                                         │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Hardcoded Login Anomalies: 0            │ Queries engine_stats for real login anomaly count                                                     │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Hardcoded High Probability: -           │ Queries get_top_links() and counts links with probability >0.8                                        │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ avg_latency_ms: 25.0 guess              │ Uses real value from metrics DB; only falls back to CSV when DB is empty                              │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Risk drips decorative + fixed positions │ Replaced with a proportional horizontal bar chart                                                     │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 15-row hardcoded table                  │ Row-count st.number_input + account search                                                            │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Debug sidebar toggles                   │ Removed entirely                                                                                      │
+  ├─────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ No auto-refresh                         │ @st.fragment(run_every=10) with same fallback pattern                                                 │
+  └─────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  pages/graph_explorer.py (new)
+
+  - Interactive Plotly scatter graph replacing the static PNG from visualizer.py
+  - 5 risk-tier colours with text symbols in legend (not binary red/blue)
+  - Node size = connection degree
+  - Hover tooltip: account, tier, score, in/out degree
+  - Searched account gets a white highlight border
+  - Risk-tier multiselect filter; max-node slider (highest-risk first)
+  - Account detail panel shown below graph when a node is searched
+  - Labels auto-suppressed when >80 nodes
+
+  ---
+  pages/account_detail.py (new)
+
+  - Account selector with tier tag + alert-state icon in label
+  - Overview table when no account is selected
+  - Risk score gauge with animated fill bar
+  - Active signal list with per-phase icon, colour, and phase label
+  - Alert management: Unreviewed / Investigating / False Positive / Escalated + free-text notes, persisted to alert_state.db
+  - Transaction timeline: incoming vs outgoing bar chart, date-range filterable
+  - Counterparty mini-graph: interactive Plotly, nodes coloured by their risk tier
+
+  ---
+  src/alert_store.py (new)
+
+  SQLite-backed store for alert states. get_alert_state(), set_alert_state(), get_all_states().
+
+  ---
+  src/visualizer.py (updated)
+
+  - Added build_plotly_graph() — full interactive Plotly figure, same API as the old plot_graph but returns a go.Figure instead of saving a PNG
+  - Added plot_graph_with_tiers() — improved static PNG with 5-tier colours, node labels re-enabled, edge amount labels, and a proper matplotlib legend
+
+  ---
+  requirements.txt
+
+  - streamlit>=1.37.0 (pins the minimum for @st.fragment(run_every=...))
+  - psutil added for real system metrics

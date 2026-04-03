@@ -115,7 +115,26 @@ class InferenceEngine:
         # Load LSTM Link Predictor
         try:
             lstm_path = os.path.join(ROOT, 'models', 'lstm_link_predictor.pt')
-            self.models['lstm'], self.metadata['lstm'] = load_lstm_model(lstm_path)
+            metadata_path = os.path.join(ROOT, 'models', 'lstm_metadata.json')
+            
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    lstm_meta = json.load(f)
+            else:
+                # Default metadata if not found
+                lstm_meta = {'input_size': 64, 'hidden_size': 128, 'num_layers': 2}
+            
+            # Import and create LSTM model instance
+            from src.lstm_link_predictor import LSTMLinkPredictor
+            lstm_model = LSTMLinkPredictor(
+                input_size=lstm_meta.get('input_size', 64),
+                hidden_size=lstm_meta.get('hidden_size', 128),
+                num_layers=lstm_meta.get('num_layers', 2)
+            )
+            
+            # Load the model weights
+            self.models['lstm'] = load_lstm_model(lstm_model, lstm_path)
+            self.metadata['lstm'] = lstm_meta
             print("✓ LSTM Link Predictor model loaded")
         except Exception as e:
             print(f"✗ LSTM loading failed: {e}")
