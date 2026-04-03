@@ -49,7 +49,7 @@ st.markdown("""
         background: rgba(20, 20, 25, 0.6);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
         border-radius: 16px;
         padding: 24px;
         margin-bottom: 16px;
@@ -61,7 +61,7 @@ st.markdown("""
         font-size: 0.82rem;
         text-transform: uppercase;
         letter-spacing: 0.1em;
-        color: #8888aa;
+        color: #aaaacc;
         margin-bottom: 6px;
     }
     .metric-value {
@@ -84,7 +84,7 @@ st.markdown("""
     .badge-HIGH     { background: rgba(255,107,53,0.15); color: #FF6B35; border: 1px solid #FF6B3544; }
     .badge-MEDIUM   { background: rgba(255,184,0,0.15);  color: #FFB800; border: 1px solid #FFB80044; }
     .badge-LOW      { background: rgba(0,255,148,0.15);  color: #00FF94; border: 1px solid #00FF9444; }
-    .badge-CLEAN    { background: rgba(100,100,100,0.15);color: #888888; border: 1px solid #55555544; }
+    .badge-CLEAN    { background: rgba(144,144,160,0.15);color: #bbbbcc; border: 1px solid #9090a044; }
 
     /* ── Section header ─────────────────────────────────────────────────── */
     .section-header {
@@ -98,9 +98,9 @@ st.markdown("""
 
     /* ── Custom scrollbar ───────────────────────────────────────────────── */
     ::-webkit-scrollbar       { width: 7px; height: 7px; }
-    ::-webkit-scrollbar-track { background: #0a0a0a; }
-    ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #555; }
+    ::-webkit-scrollbar-track { background: #1a1a1a; }
+    ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #777; }
 </style>
 """, unsafe_allow_html=True)
 

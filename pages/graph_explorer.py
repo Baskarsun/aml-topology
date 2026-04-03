@@ -35,7 +35,7 @@ TIER_COLORS = {
     "HIGH":     "#FF6B35",
     "MEDIUM":   "#FFB800",
     "LOW":      "#00FF94",
-    "CLEAN":    "#555555",
+    "CLEAN":    "#9090a0",
 }
 TIER_LABELS = {
     "CRITICAL": "▲ CRITICAL",
@@ -128,7 +128,7 @@ def _build_plotly_figure(
             annotations=[dict(
                 text="No nodes match the current filter.",
                 x=0.5, y=0.5, showarrow=False,
-                font=dict(color="#888", size=16),
+                font=dict(color="#bbb", size=16),
             )],
         )
         return fig
@@ -146,7 +146,7 @@ def _build_plotly_figure(
     edge_trace = go.Scatter(
         x=edge_x, y=edge_y,
         mode="lines",
-        line=dict(width=0.7, color="#2a2a2a"),
+        line=dict(width=0.8, color="rgba(255,255,255,0.12)"),
         hoverinfo="none",
         showlegend=False,
     )
@@ -187,7 +187,7 @@ def _build_plotly_figure(
             mode="markers+text" if (show_labels and len(G.nodes()) <= 80) else "markers",
             text=[str(n) for n in nodes_t],
             textposition="top center",
-            textfont=dict(size=8, color="#999"),
+            textfont=dict(size=9, color="#cccccc"),
             hovertext=hover_texts, hoverinfo="text",
             marker=dict(
                 size=sizes,
@@ -210,10 +210,10 @@ def _build_plotly_figure(
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, showline=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, showline=False),
         legend=dict(
-            bgcolor="rgba(10,10,15,0.85)",
-            bordercolor="#333", borderwidth=1,
-            font=dict(color="#ccc", size=12),
-            title=dict(text="Risk Tier", font=dict(color="#666")),
+            bgcolor="rgba(10,10,15,0.92)",
+            bordercolor="#555", borderwidth=1,
+            font=dict(color="#ddd", size=12),
+            title=dict(text="Risk Tier", font=dict(color="#aaa")),
             x=0.01, y=0.99,
         ),
         font=dict(family="system-ui, sans-serif"),
@@ -306,13 +306,13 @@ if search_node:
             st.markdown(
                 f'<div style="background:rgba(20,20,25,0.7);border:2px solid {tier_col};'
                 f'border-radius:14px;padding:22px;text-align:center">'
-                f'<div style="font-size:0.78rem;color:#777;text-transform:uppercase;'
+                f'<div style="font-size:0.78rem;color:#aaa;text-transform:uppercase;'
                 f'letter-spacing:0.12em">Risk Tier</div>'
                 f'<div style="font-size:2.2rem;font-weight:700;color:{tier_col}">'
                 f'{tier_lbl}</div>'
-                f'<div style="color:#888;font-size:0.92rem;margin-top:4px">'
+                f'<div style="color:#bbb;font-size:0.92rem;margin-top:4px">'
                 f'Score: {score:.3f}</div>'
-                f'<div style="margin-top:12px;background:#111;border-radius:8px;height:6px">'
+                f'<div style="margin-top:12px;background:#2a2a2a;border-radius:8px;height:6px">'
                 f'<div style="background:{tier_col};border-radius:8px;height:6px;'
                 f'width:{int(score*100)}%"></div>'
                 f'</div></div>',

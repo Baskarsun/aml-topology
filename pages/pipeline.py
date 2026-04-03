@@ -29,7 +29,7 @@ C = {
     "high":   "#FF2B2B",
     "medium": "#FFB800",
     "low":    "#00FF94",
-    "clean":  "#555555",
+    "clean":  "#9090a0",
     "accent": "#00FFFF",
     "dim":    "#888888",
 }
@@ -215,7 +215,7 @@ def _render_pipeline():
     phase_cols = st.columns(8)
     for i, ph in enumerate(PHASES):
         with phase_cols[i]:
-            border = f"border:1px solid {C['high']};" if ph["alert"] else "border:1px solid #1a1a2e;"
+            border = f"border:1px solid {C['high']};" if ph["alert"] else "border:1px solid rgba(255,255,255,0.12);"
             count_color = C["high"] if ph["alert"] else C["accent"]
             st.markdown(
                 f'<div style="background:linear-gradient(135deg,#0d0d15,#15151f);'
@@ -223,9 +223,9 @@ def _render_pipeline():
                 f'<div style="font-size:1.55rem">{ph["icon"]}</div>'
                 f'<div style="font-size:0.7rem;font-weight:600;color:#fff;margin:5px 0 2px">'
                 f'{ph["title"]}</div>'
-                f'<div style="font-size:0.58rem;color:#555;margin-bottom:6px">{ph["sub"]}</div>'
+                f'<div style="font-size:0.58rem;color:#888;margin-bottom:6px">{ph["sub"]}</div>'
                 f'<div style="font-size:0.63rem;color:{count_color};font-weight:700;'
-                f'padding:2px 6px;background:rgba(0,255,255,0.06);'
+                f'padding:2px 6px;background:rgba(0,255,255,0.12);'
                 f'border-radius:8px;display:inline-block">'
                 f'{ph["count"]:,} {ph["unit"]}</div>'
                 f'</div>',
@@ -284,13 +284,13 @@ def _render_pipeline():
                     val_color = C["high"] if is_alert else C["low"]
                     rows_html += (
                         f'<div style="display:flex;justify-content:space-between;'
-                        f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);">'
-                        f'<span style="color:#777;font-size:0.78rem">{label}</span>'
+                        f'padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.08);">'
+                        f'<span style="color:#aaa;font-size:0.78rem">{label}</span>'
                         f'<span style="color:{val_color};font-weight:600;font-size:0.78rem">'
                         f'{val:,}</span></div>'
                     )
                 st.markdown(
-                    f'<div style="background:rgba(10,10,15,0.9);border:1px solid #1a1a2e;'
+                    f'<div style="background:rgba(10,10,15,0.9);border:1px solid rgba(255,255,255,0.12);'
                     f'border-radius:12px;padding:14px;margin-bottom:12px;">'
                     f'<div style="color:#00FFFF;font-weight:600;font-size:0.88rem;'
                     f'margin-bottom:10px">{title}</div>'
@@ -337,7 +337,7 @@ def _render_pipeline():
                     f'justify-content:space-between;align-items:center">'
                     f'<span style="color:{col};font-weight:700;font-size:0.85rem">'
                     f'{cat}</span>'
-                    f'<span style="color:#555;font-size:0.82rem">{pct:.0f}%</span>'
+                    f'<span style="color:#999;font-size:0.82rem">{pct:.0f}%</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )

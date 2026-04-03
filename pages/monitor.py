@@ -39,7 +39,7 @@ C = {
     'high':    '#FF2B2B',
     'medium':  '#FFB800',
     'low':     '#00FF94',
-    'clean':   '#555555',
+    'clean':   '#9090a0',
     'info':    '#00BFFF',
 }
 TIER_COLORS  = {'HIGH': C['high'], 'MEDIUM': C['medium'], 'LOW': C['low'], 'CLEAN': C['clean']}
@@ -91,7 +91,7 @@ with st.sidebar:
 col_title, col_status = st.columns([3, 1])
 with col_title:
     st.markdown(
-        "# 🛡️ FRAUD.GUARD <span style='font-weight:300;opacity:0.45'>| MONITOR</span>",
+        "# 🛡️ FRAUD.GUARD <span style='font-weight:300;color:#6a6a9a'>| MONITOR</span>",
         unsafe_allow_html=True,
     )
 with col_status:
@@ -99,7 +99,7 @@ with col_status:
     st.markdown(
         f'<div style="text-align:right;padding-top:14px;">'
         f'<span style="color:#00FF94;font-weight:600;">● OPERATIONAL</span>'
-        f'<br><span style="color:#555;font-size:0.78rem">{now_str}</span>'
+        f'<br><span style="color:#888;font-size:0.78rem">{now_str}</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -168,7 +168,7 @@ def _render_live():
     # ── KPI cards ──────────────────────────────────────────────────────────────
     def _kpi_html(label, value, sub=None, value_color="#ffffff"):
         sub_html = (
-            f'<div style="font-size:0.8rem;color:#666;margin-top:4px">{sub}</div>'
+            f'<div style="font-size:0.8rem;color:#999;margin-top:4px">{sub}</div>'
             if sub else ""
         )
         return (
@@ -211,14 +211,14 @@ def _render_live():
                     name=engine, mode="lines",
                     line=dict(width=2, color=hex_c),
                     fill="tozeroy",
-                    fillcolor=f"rgba({r},{g},{b},0.07)",
+                    fillcolor=f"rgba({r},{g},{b},0.15)",
                 ))
             fig_lat.update_layout(
                 template="plotly_dark",
                 paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                 height=260, margin=dict(l=0, r=0, t=10, b=0),
                 xaxis=dict(showgrid=False),
-                yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.07)",
+                yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.12)",
                            title="ms"),
                 legend=dict(orientation="h", y=1.18, font=dict(size=11)),
                 font=dict(family="system-ui"),
@@ -361,7 +361,7 @@ def _render_live():
                             height=240,
                             margin=dict(l=0, r=0, t=40, b=0),
                             yaxis=dict(range=[0, 1], showgrid=True,
-                                       gridcolor="rgba(255,255,255,0.07)",
+                                       gridcolor="rgba(255,255,255,0.12)",
                                        title="Risk Score"),
                             font=dict(family="system-ui"),
                         )
@@ -385,11 +385,11 @@ def _render_live():
                         score_disp = latest.get("Score_raw", "—")
                         st.markdown(
                             f'<div class="glass-card" style="text-align:center;'
-                            f'border-color:{tier_color}44">'
+                            f'border-color:{tier_color}aa">'
                             f'<div class="metric-label">Current Risk</div>'
                             f'<div class="metric-value" style="color:{tier_color}">'
                             f'{latest.get("Level","—")}</div>'
-                            f'<div style="color:#666;font-size:0.85rem;margin-top:4px">'
+                            f'<div style="color:#999;font-size:0.85rem;margin-top:4px">'
                             f'Score: {score_disp:.3f if isinstance(score_disp, float) else score_disp}'
                             f'</div></div>',
                             unsafe_allow_html=True,

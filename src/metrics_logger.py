@@ -157,22 +157,31 @@ class MetricsLogger:
             return [dict(zip(columns, row)) for row in cursor.fetchall()]
     
     def get_kpi_stats(self, minutes: int = 60):
-        """Get KPI statistics for the last N minutes."""
+        """Get KPI statistics for the last N minutes, falling back to all-time if empty."""
+        query = """
+            SELECT
+                COUNT(DISTINCT account_id) as total_accounts,
+                COUNT(*) as total_transactions,
+                SUM(CASE WHEN risk_level = 'HIGH' THEN 1 ELSE 0 END) as high_risk_count,
+                SUM(CASE WHEN risk_level = 'MEDIUM' THEN 1 ELSE 0 END) as medium_risk_count,
+                SUM(CASE WHEN risk_level = 'LOW' THEN 1 ELSE 0 END) as low_risk_count,
+                SUM(CASE WHEN risk_level = 'CLEAN' THEN 1 ELSE 0 END) as clean_count,
+                AVG(latency_ms) as avg_latency_ms
+            FROM inference_logs
+            {where}
+        """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT 
-                    COUNT(DISTINCT account_id) as total_accounts,
-                    COUNT(*) as total_transactions,
-                    SUM(CASE WHEN risk_level = 'HIGH' THEN 1 ELSE 0 END) as high_risk_count,
-                    SUM(CASE WHEN risk_level = 'MEDIUM' THEN 1 ELSE 0 END) as medium_risk_count,
-                    SUM(CASE WHEN risk_level = 'LOW' THEN 1 ELSE 0 END) as low_risk_count,
-                    SUM(CASE WHEN risk_level = 'CLEAN' THEN 1 ELSE 0 END) as clean_count,
-                    AVG(latency_ms) as avg_latency_ms
-                FROM inference_logs
-                WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')
-            """, (minutes,))
+            # Try windowed query first
+            cursor.execute(
+                query.format(where="WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' minutes')"),
+                (minutes,)
+            )
             row = cursor.fetchone()
+            # If no data in window, fall back to all-time
+            if not row or (row[1] or 0) == 0:
+                cursor.execute(query.format(where=""))
+                row = cursor.fetchone()
             return {
                 'total_accounts': row[0] or 0,
                 'total_transactions': row[1] or 0,

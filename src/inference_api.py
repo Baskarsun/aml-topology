@@ -182,10 +182,13 @@ class InferenceEngine:
             maps = self.metadata['gbdt'].get('maps', {})
             score = score_transaction(transaction, maps, self.models['gbdt'])
             
+            risk_level = self._score_to_risk_level(float(score))
             return {
                 'transaction': transaction,
                 'gbdt_score': float(score),
-                'gbdt_risk_level': self._score_to_risk_level(float(score)),
+                'gbdt_risk_level': risk_level,
+                'risk_score': float(score),
+                'risk_level': risk_level,
                 'model': 'gbdt',
                 'timestamp': datetime.now().isoformat()
             }
