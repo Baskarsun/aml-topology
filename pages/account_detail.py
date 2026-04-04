@@ -128,7 +128,7 @@ def _load_tx() -> pd.DataFrame | None:
 with st.sidebar:
     st.markdown("### ⚙️ Account Controls")
     date_from = st.date_input("Timeline From",
-                               datetime.utcnow().date() - timedelta(days=30))
+                               datetime.utcnow().date() - timedelta(days=365))
     date_to   = st.date_input("Timeline To", datetime.utcnow().date())
 
 # ── Header ─────────────────────────────────────────────────────────────────────

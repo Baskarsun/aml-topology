@@ -2,13 +2,15 @@
 Metrics Logger for AML Inference API
 
 Logs inference metrics to SQLite database for real-time dashboard visualization.
+Also maintains an append-only audit_log table for security and compliance.
 """
 
+import hashlib
 import sqlite3
 import json
 import threading
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pathlib import Path
 
 class MetricsLogger:
@@ -22,8 +24,26 @@ class MetricsLogger:
     def _init_db(self):
         """Initialize database schema."""
         with sqlite3.connect(self.db_path) as conn:
+            # Enable WAL mode for safe concurrent writes
+            conn.execute("PRAGMA journal_mode=WAL")
+
             cursor = conn.cursor()
-            
+
+            # Audit log — append-only, never UPDATE or DELETE rows here
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_time  TEXT    NOT NULL,
+                    event_type  TEXT    NOT NULL,
+                    client_ip   TEXT,
+                    key_hash    TEXT,
+                    endpoint    TEXT,
+                    input_hash  TEXT,
+                    outcome     TEXT,
+                    detail      TEXT
+                )
+            """)
+
             # Inference logs table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS inference_logs (
@@ -37,9 +57,22 @@ class MetricsLogger:
                     risk_level TEXT,
                     component_scores TEXT,
                     status TEXT,
-                    error TEXT
+                    error TEXT,
+                    requester_key_hash TEXT,
+                    input_payload_hash TEXT,
+                    client_ip TEXT
                 )
             """)
+
+            # Migrate existing inference_logs tables that predate Phase 1 security columns
+            existing_cols = {row[1] for row in cursor.execute("PRAGMA table_info(inference_logs)")}
+            for col, typedef in [
+                ("requester_key_hash", "TEXT"),
+                ("input_payload_hash", "TEXT"),
+                ("client_ip",          "TEXT"),
+            ]:
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE inference_logs ADD COLUMN {col} {typedef}")
             
             # Engine throughput table
             cursor.execute("""
@@ -84,16 +117,62 @@ class MetricsLogger:
             
             conn.commit()
     
+    @staticmethod
+    def _sha256(value: str) -> str:
+        """Return hex SHA-256 of a string."""
+        return hashlib.sha256(value.encode()).hexdigest()
+
+    def log_audit_event(
+        self,
+        event_type: str,
+        client_ip: Optional[str] = None,
+        key_hash: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        input_hash: Optional[str] = None,
+        outcome: Optional[str] = None,
+        detail: Optional[str] = None,
+    ):
+        """
+        Append a row to the immutable audit_log table.
+
+        This method only ever INSERTs — rows are never modified or deleted,
+        providing the append-only audit trail required for AML compliance.
+        """
+        with self.lock:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute(
+                    """
+                    INSERT INTO audit_log
+                        (event_time, event_type, client_ip, key_hash,
+                         endpoint, input_hash, outcome, detail)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        datetime.utcnow().isoformat(),
+                        event_type,
+                        client_ip,
+                        key_hash,
+                        endpoint,
+                        input_hash,
+                        outcome,
+                        detail,
+                    ),
+                )
+                conn.commit()
+
     def log_inference(self, data: Dict[str, Any]):
         """Log an inference request."""
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
+                conn.execute("PRAGMA journal_mode=WAL")
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO inference_logs 
-                    (timestamp, account_id, endpoint, engine, latency_ms, 
-                     risk_score, risk_level, component_scores, status, error)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO inference_logs
+                    (timestamp, account_id, endpoint, engine, latency_ms,
+                     risk_score, risk_level, component_scores, status, error,
+                     requester_key_hash, input_payload_hash, client_ip)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data.get('timestamp', datetime.utcnow().isoformat()),
                     data.get('account_id'),
@@ -104,7 +183,10 @@ class MetricsLogger:
                     data.get('risk_level'),
                     json.dumps(data.get('component_scores', {})),
                     data.get('status', 'success'),
-                    data.get('error')
+                    data.get('error'),
+                    data.get('requester_key_hash'),
+                    data.get('input_payload_hash'),
+                    data.get('client_ip'),
                 ))
                 conn.commit()
     
@@ -178,8 +260,9 @@ class MetricsLogger:
                 (minutes,)
             )
             row = cursor.fetchone()
-            # If no data in window, fall back to all-time
-            if not row or (row[1] or 0) == 0:
+            # Fall back to all-time when the window has fewer than 10 transactions
+            # (prevents sparse recent data making the dashboard look empty)
+            if not row or (row[1] or 0) < 10:
                 cursor.execute(query.format(where=""))
                 row = cursor.fetchone()
             return {

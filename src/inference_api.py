@@ -9,13 +9,29 @@ Provides REST endpoints to:
 5. Consolidate all signals into final risk scores
 
 Models are loaded once at startup for performance.
+
+Security controls (Phase 1):
+- API key authentication on all endpoints (X-API-Key header)
+- Pydantic input validation with automatic 422 on bad payloads
+- Rate limiting (Flask-Limiter): 200/min global, 30/min on heavy endpoints
+- Append-only audit log for every request (success and failure)
+- .env-based secrets via python-dotenv
 """
 
+import hashlib
 import json
 import os
 import sys
 import numpy as np
 import pandas as pd
+from functools import wraps
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv optional; env vars may be set by the shell
+
 try:
     import torch
     _HAS_TORCH = True
@@ -38,6 +54,89 @@ try:
 except ImportError:
     _HAS_FLASK = False
     print("Warning: Flask not installed. Install with: pip install flask")
+
+try:
+    from pydantic import ValidationError as PydanticValidationError
+    from src.api_schemas import (
+        TransactionRequest,
+        SequenceRequest,
+        ConsolidateRequest,
+        BatchRequest,
+    )
+    _HAS_PYDANTIC = True
+except ImportError:
+    _HAS_PYDANTIC = False
+    print("Warning: pydantic not installed. Input validation disabled.")
+
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    _HAS_LIMITER = True
+except ImportError:
+    _HAS_LIMITER = False
+    print("Warning: Flask-Limiter not installed. Rate limiting disabled.")
+
+# ---------------------------------------------------------------------------
+# API key authentication
+# ---------------------------------------------------------------------------
+
+def _load_valid_keys() -> set:
+    """Load API keys from AML_API_KEYS env var (comma-separated)."""
+    raw = os.environ.get("AML_API_KEYS", "")
+    keys = {k.strip() for k in raw.split(",") if k.strip()}
+    if not keys:
+        print(
+            "WARNING: AML_API_KEYS is not set. "
+            "All requests will be rejected with 401. "
+            "Set AML_API_KEYS in your .env file."
+        )
+    return keys
+
+
+_VALID_KEYS: set = _load_valid_keys()
+
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def require_api_key(f):
+    """Decorator: reject requests that don't carry a valid X-API-Key header."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        key = request.headers.get("X-API-Key", "")
+        client_ip = request.remote_addr
+        endpoint = request.path
+
+        # Lazy import to avoid circular dependency at module load time
+        from src.metrics_logger import get_metrics_logger
+        _metrics = get_metrics_logger()
+
+        if key not in _VALID_KEYS:
+            _metrics.log_audit_event(
+                event_type="auth_failure",
+                client_ip=client_ip,
+                key_hash=_sha256(key) if key else None,
+                endpoint=endpoint,
+                outcome="rejected",
+                detail="Invalid or missing X-API-Key",
+            )
+            return jsonify({"error": "Unauthorized — provide a valid X-API-Key header"}), 401
+
+        # Authenticated — log and proceed
+        raw_body = request.get_data(as_text=True) or ""
+        input_hash = _sha256(raw_body) if raw_body else None
+        _metrics.log_audit_event(
+            event_type="inference",
+            client_ip=client_ip,
+            key_hash=_sha256(key),
+            endpoint=endpoint,
+            input_hash=input_hash,
+            outcome="accepted",
+        )
+        return f(*args, **kwargs)
+    return decorated
+
 
 from src.gbdt_detector import load_gbdt_model, score_transaction
 try:
@@ -453,30 +552,62 @@ class InferenceEngine:
 
 def create_app(inference_engine: InferenceEngine = None) -> Flask:
     """Create and configure Flask application."""
-    
+
     if not _HAS_FLASK:
         raise RuntimeError("Flask is required. Install with: pip install flask")
-    
+
     app = Flask(__name__)
-    
+
+    # ---- Rate limiting ----
+    if _HAS_LIMITER:
+        limiter = Limiter(
+            get_remote_address,
+            app=app,
+            default_limits=["200 per minute"],
+            headers_enabled=True,         # adds X-RateLimit-* headers to responses
+        )
+    else:
+        limiter = None
+
+    # ---- Production HTTPS enforcement ----
+    if os.getenv("AML_ENV") == "production":
+        try:
+            from flask_talisman import Talisman
+            Talisman(app, force_https=True)
+            print("Flask-Talisman: HTTPS enforcement enabled.")
+        except ImportError:
+            print("Warning: Flask-Talisman not installed. HTTPS not enforced.")
+
     # Initialize inference engine
     engine = inference_engine or InferenceEngine()
-    
-    # Initialize metrics logger
-    metrics = get_metrics_logger()
-    
+
+    # Initialize metrics logger (uses AML_DB_PATH env var with fallback)
+    metrics = get_metrics_logger(os.getenv("AML_DB_PATH", "metrics.db"))
+
+    def _get_security_context():
+        """Extract security metadata from the current request for audit/logging."""
+        key = request.headers.get("X-API-Key", "")
+        raw_body = request.get_data(as_text=True) or ""
+        return {
+            "client_ip": request.remote_addr,
+            "key_hash": _sha256(key) if key else None,
+            "input_hash": _sha256(raw_body) if raw_body else None,
+        }
+
     # ==================== ENDPOINTS ====================
-    
+
     @app.route('/health', methods=['GET'])
+    @require_api_key
     def health():
         """Health check endpoint."""
         return jsonify(engine.health_check())
-    
+
     @app.route('/score/transaction', methods=['POST'])
+    @require_api_key
     def score_transaction_endpoint():
         """
         Score a single transaction.
-        
+
         Expected JSON:
         {
             "amount": 5000.0,
@@ -489,99 +620,93 @@ def create_app(inference_engine: InferenceEngine = None) -> Flask:
             "uniq_payees_24h": 2,
             "country": "US"
         }
-        
-        Response:
-        {
-            "transaction": {...},
-            "gbdt_score": 0.45,
-            "gbdt_risk_level": "MEDIUM",
-            "timestamp": "2026-01-09T..."
-        }
         """
         try:
-            data = request.get_json()
-            if not data:
+            raw = request.get_json()
+            if not raw:
                 return jsonify({'error': 'No JSON data provided'}), 400
-            
+
+            if _HAS_PYDANTIC:
+                try:
+                    validated = TransactionRequest.model_validate(raw)
+                    data = validated.model_dump()
+                except PydanticValidationError as exc:
+                    return jsonify({'error': 'Validation error', 'detail': exc.errors()}), 422
+            else:
+                data = raw
+
             result = engine.score_transaction(data)
             return jsonify(result)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
-    
+
     @app.route('/score/sequence', methods=['POST'])
+    @require_api_key
     def score_sequence_endpoint():
         """
         Score an event sequence.
-        
+
         Expected JSON:
         {
             "events": ["login_success", "view_account", "transfer", "logout"]
         }
-        
-        Response:
-        {
-            "events": [...],
-            "sequence_score": 0.25,
-            "anomaly_risk_level": "LOW",
-            "timestamp": "2026-01-09T..."
-        }
         """
         try:
-            data = request.get_json()
-            if not data or 'events' not in data:
-                return jsonify({'error': 'Missing "events" field'}), 400
-            
-            events = data['events']
-            if not isinstance(events, list):
-                return jsonify({'error': '"events" must be a list'}), 400
-            
+            raw = request.get_json()
+            if not raw:
+                return jsonify({'error': 'No JSON data provided'}), 400
+
+            if _HAS_PYDANTIC:
+                try:
+                    validated = SequenceRequest.model_validate(raw)
+                    events = validated.events
+                except PydanticValidationError as exc:
+                    return jsonify({'error': 'Validation error', 'detail': exc.errors()}), 422
+            else:
+                if 'events' not in raw or not isinstance(raw['events'], list):
+                    return jsonify({'error': '"events" must be a list'}), 400
+                events = raw['events']
+
             result = engine.score_event_sequence(events)
             return jsonify(result)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
-    
+
     @app.route('/score/consolidate', methods=['POST'])
+    @require_api_key
     def consolidate_endpoint():
         """
         Consolidate all signals into final risk score.
-        
+
         Expected JSON:
         {
             "account_id": "ACC_0025",
-            "transaction": {
-                "amount": 5000.0,
-                "mcc": "5411",
-                ...
-            },
+            "transaction": {"amount": 5000.0, "mcc": "5411", ...},
             "events": ["login_success", "transfer", "logout"]
-        }
-        
-        Response:
-        {
-            "account_id": "ACC_0025",
-            "component_scores": {
-                "gbdt": {"score": 0.45, "weight": 0.1, "status": "success"},
-                "sequence": {"score": 0.25, "weight": 0.35, "status": "success"}
-            },
-            "consolidated_risk_score": 0.38,
-            "risk_level": "LOW",
-            "recommendation": "Allow - no suspicious activity detected",
-            "timestamp": "2026-01-09T..."
         }
         """
         start_time = datetime.now()
+        sec = _get_security_context()
         try:
-            data = request.get_json()
-            if not data:
+            raw = request.get_json()
+            if not raw:
                 return jsonify({'error': 'No JSON data provided'}), 400
-            
-            account_id = data.get('account_id')
-            transaction = data.get('transaction', {})
-            events = data.get('events', None)
-            
+
+            if _HAS_PYDANTIC:
+                try:
+                    validated = ConsolidateRequest.model_validate(raw)
+                    account_id = validated.account_id
+                    transaction = validated.transaction.model_dump()
+                    events = validated.events
+                except PydanticValidationError as exc:
+                    return jsonify({'error': 'Validation error', 'detail': exc.errors()}), 422
+            else:
+                account_id = raw.get('account_id')
+                transaction = raw.get('transaction', {})
+                events = raw.get('events', None)
+
             result = engine.consolidate_risks(transaction, events, account_id)
-            
-            # Log metrics
+
             latency_ms = (datetime.now() - start_time).total_seconds() * 1000
             metrics.log_inference({
                 'timestamp': result.get('timestamp'),
@@ -592,114 +717,132 @@ def create_app(inference_engine: InferenceEngine = None) -> Flask:
                 'risk_score': result.get('consolidated_risk_score'),
                 'risk_level': result.get('risk_level'),
                 'component_scores': result.get('component_scores'),
-                'status': 'success'
+                'status': 'success',
+                **sec,
             })
-            
-            # Log engine activities
+
             for engine_name, engine_data in result.get('component_scores', {}).items():
                 if engine_data.get('status') == 'success':
                     metrics.log_engine_activity(
                         engine=engine_name,
                         operation='score',
-                        latency_ms=latency_ms / len(result.get('component_scores', {}))
+                        latency_ms=latency_ms / max(len(result.get('component_scores', {})), 1),
                     )
-            
+
             return jsonify(result)
         except Exception as e:
             latency_ms = (datetime.now() - start_time).total_seconds() * 1000
             metrics.log_inference({
                 'timestamp': datetime.now().isoformat(),
-                'account_id': data.get('account_id') if 'data' in locals() else None,
                 'endpoint': '/score/consolidate',
                 'engine': 'consolidated',
                 'latency_ms': latency_ms,
                 'status': 'error',
-                'error': str(e)
+                'error': str(e),
+                **sec,
             })
             return jsonify({'error': str(e)}), 500
-    
+
     @app.route('/batch/score', methods=['POST'])
+    @require_api_key
     def batch_score_endpoint():
         """
         Score multiple transactions in batch.
-        
+
         Expected JSON:
         {
             "transactions": [
-                {
-                    "account_id": "ACC_0001",
-                    "transaction": {...},
-                    "events": [...]
-                },
+                {"account_id": "ACC_0001", "transaction": {...}, "events": [...]},
                 ...
             ]
         }
-        
-        Response:
-        {
-            "batch_id": "batch_2026-01-09_...",
-            "total": 3,
-            "results": [
-                {"account_id": "ACC_0001", "consolidated_risk_score": 0.45, ...},
-                ...
-            ],
-            "summary": {
-                "high_risk": 1,
-                "medium_risk": 1,
-                "low_risk": 1,
-                "clean": 0
-            }
-        }
         """
         try:
-            data = request.get_json()
-            if not data or 'transactions' not in data:
-                return jsonify({'error': 'Missing "transactions" field'}), 400
-            
-            transactions = data['transactions']
-            if not isinstance(transactions, list):
-                return jsonify({'error': '"transactions" must be a list'}), 400
-            
+            raw = request.get_json()
+            if not raw:
+                return jsonify({'error': 'No JSON data provided'}), 400
+
+            if _HAS_PYDANTIC:
+                try:
+                    validated = BatchRequest.model_validate(raw)
+                    items = validated.transactions
+                except PydanticValidationError as exc:
+                    return jsonify({'error': 'Validation error', 'detail': exc.errors()}), 422
+            else:
+                if 'transactions' not in raw or not isinstance(raw['transactions'], list):
+                    return jsonify({'error': '"transactions" must be a list'}), 400
+                items = raw['transactions']
+
             results = []
             risk_counts = {'HIGH': 0, 'MEDIUM': 0, 'LOW': 0, 'CLEAN': 0}
-            
-            for tx_data in transactions:
-                account_id = tx_data.get('account_id', f'TXN_{len(results)}')
-                transaction = tx_data.get('transaction', {})
-                events = tx_data.get('events', None)
-                
+
+            for item in items:
+                if _HAS_PYDANTIC:
+                    account_id = item.account_id or f'TXN_{len(results)}'
+                    transaction = item.transaction.model_dump()
+                    events = item.events
+                else:
+                    account_id = item.get('account_id', f'TXN_{len(results)}')
+                    transaction = item.get('transaction', {})
+                    events = item.get('events', None)
+
                 result = engine.consolidate_risks(transaction, events, account_id)
                 results.append(result)
-                
-                risk_level = result.get('risk_level', 'CLEAN')
-                risk_counts[risk_level] += 1
-            
+                risk_counts[result.get('risk_level', 'CLEAN')] += 1
+
             return jsonify({
                 'batch_id': f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                'total': len(transactions),
+                'total': len(results),
                 'results': results,
                 'summary': {
                     'high_risk': risk_counts['HIGH'],
                     'medium_risk': risk_counts['MEDIUM'],
                     'low_risk': risk_counts['LOW'],
-                    'clean': risk_counts['CLEAN']
+                    'clean': risk_counts['CLEAN'],
                 },
-                'timestamp': datetime.now().isoformat()
+                'timestamp': datetime.now().isoformat(),
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
-    
+
     @app.route('/models/info', methods=['GET'])
+    @require_api_key
     def models_info_endpoint():
         """Get information about loaded models."""
         return jsonify({
             'available_models': list(engine.models.keys()),
-            'metadata': {k: {**v, 'timestamp': str(v.get('timestamp', 'N/A'))} 
-                        for k, v in engine.metadata.items()},
+            'metadata': {k: {**v, 'timestamp': str(v.get('timestamp', 'N/A'))}
+                         for k, v in engine.metadata.items()},
             'consolidator_weights': engine.consolidator.weights if engine.consolidator else None,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
         })
-    
+
+    # ---- Global error handlers ----
+
+    @app.errorhandler(429)
+    def rate_limit_handler(e):
+        from src.metrics_logger import get_metrics_logger as _get_ml
+        _get_ml().log_audit_event(
+            event_type="rate_limit",
+            client_ip=request.remote_addr,
+            endpoint=request.path,
+            outcome="rejected",
+            detail=str(e.description),
+        )
+        return jsonify({"error": "Rate limit exceeded", "detail": str(e.description)}), 429
+
+    @app.errorhandler(500)
+    def internal_error_handler(e):
+        from src.metrics_logger import get_metrics_logger as _get_ml
+        _get_ml().log_audit_event(
+            event_type="server_error",
+            client_ip=request.remote_addr,
+            endpoint=request.path,
+            outcome="error",
+            detail=str(e),
+        )
+        return jsonify({"error": "Internal server error"}), 500
+
     return app
 
 

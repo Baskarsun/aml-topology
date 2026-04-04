@@ -1,0 +1,5 @@
+ML model documentation: training data source, validation methodology, benchmark
+datasets usedTechnical report
+5The 90%+ accuracy claim — full test harness report with raw precision/recall/F1 dataTest report + dataset
+6Scalability test results: transactions per second at peak loadLoad test report
+7Security architecture: data encryption, access controls, audit trailsSecurity overview

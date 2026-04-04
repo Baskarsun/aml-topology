@@ -66,7 +66,7 @@ with st.sidebar:
     )
 
     st.markdown("**Historical range**")
-    date_from = st.date_input("From", value=datetime.utcnow().date() - timedelta(days=7))
+    date_from = st.date_input("From", value=datetime.utcnow().date() - timedelta(days=365))
     date_to   = st.date_input("To",   value=datetime.utcnow().date())
 
     auto_refresh = st.toggle("Live Updates", value=True)

@@ -40,9 +40,9 @@ st.markdown("""
         font-family: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
+    /* Hide Streamlit chrome — footer and hamburger only; leave sidebar untouched */
     #MainMenu { visibility: hidden; }
     footer    { visibility: hidden; }
-    header    { visibility: hidden; }
 
     /* ── Glassmorphism card ─────────────────────────────────────────────── */
     .glass-card {
@@ -101,14 +101,38 @@ st.markdown("""
     ::-webkit-scrollbar-track { background: #1a1a1a; }
     ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #777; }
+
+    /* ── Nav links in sidebar ────────────────────────────────────────────── */
+    [data-testid="stSidebarNav"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Navigation ────────────────────────────────────────────────────────────────
-monitor_page = st.Page("pages/monitor.py",        title="Monitor",        icon="🛡️", default=True)
+# ── Page definitions ──────────────────────────────────────────────────────────
+monitor_page  = st.Page("pages/monitor.py",        title="Monitor",        icon="🛡️", default=True)
 pipeline_page = st.Page("pages/pipeline.py",       title="Pipeline",       icon="🔬")
 graph_page    = st.Page("pages/graph_explorer.py", title="Graph Explorer", icon="🕸️")
 account_page  = st.Page("pages/account_detail.py", title="Account Detail", icon="🔍")
 
-pg = st.navigation([monitor_page, pipeline_page, graph_page, account_page])
+# ── Routing (hidden — we draw the nav ourselves below) ────────────────────────
+pg = st.navigation(
+    [monitor_page, pipeline_page, graph_page, account_page],
+    position="hidden",
+)
+
+# ── Sidebar navigation — rendered before any page sidebar content ─────────────
+with st.sidebar:
+    st.markdown(
+        "<div style='padding:10px 4px 6px;'>"
+        "<span style='font-size:1.25rem;font-weight:700;color:#00FF94;"
+        "letter-spacing:0.04em;'>🛡️ FRAUD.GUARD</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.page_link(monitor_page,  label="Monitor",        icon="🛡️")
+    st.page_link(pipeline_page, label="Pipeline",       icon="🔬")
+    st.page_link(graph_page,    label="Graph Explorer", icon="🕸️")
+    st.page_link(account_page,  label="Account Detail", icon="🔍")
+    st.divider()
+
+# ── Run the selected page ─────────────────────────────────────────────────────
 pg.run()
