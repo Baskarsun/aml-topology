@@ -59,6 +59,7 @@ except ImportError:
     _HAS_GBDT = False
     print("Warning: GBDT detector not available")
 
+
 try:
     from src.adversarial_agent import AdversarialPatternAgent
     from src.adversarial_env import create_adversarial_env
@@ -243,26 +244,29 @@ def train_lstm_model(df, analyzer, suspicious_set, epochs=15, save_path='models/
         return False
 
 
-def train_gbdt_model(n_samples=5000, save_path='models/lgb_model.txt'):
+def train_gbdt_model(n_samples=5000, save_path='models/lgb_model.txt', cv=5):
     """
     Train GBDT (LightGBM) classifier for transaction-level anomalies.
-    
+
     Args:
         n_samples: Number of training samples to generate
         save_path: Path to save model (handled internally by gbdt_detector)
+        cv: Number of cross-validation folds (0 = disabled, default 5)
     """
     if not _HAS_GBDT:
         print("❌ GBDT training skipped (lightgbm not available)")
         return False
-    
+
     print("\n" + "-"*60)
     print("TRAINING GBDT CLASSIFIER")
     print("-"*60)
-    
+
     try:
         ensure_models_dir()
-        gbdt_detector_demo(n=n_samples, save_model_flag=True)
+        gbdt_detector_demo(n=n_samples, save_model_flag=True, cv=cv)
         print(f"✅ GBDT model trained and saved to 'models/'")
+        if cv > 1:
+            print(f"✅ {cv}-fold CV results saved to 'models/gbdt_cv_results.json'")
         return True
     except Exception as e:
         print(f"❌ GBDT training failed: {e}")
@@ -522,8 +526,8 @@ def train_all(epochs=15, gbdt_samples=5000, adversarial_episodes=0):
     # Train LSTM
     results['lstm'] = train_lstm_model(df, analyzer, suspicious_set, epochs=epochs)
     
-    # Train GBDT
-    results['gbdt'] = train_gbdt_model(n_samples=gbdt_samples)
+    # Train GBDT (with 5-fold CV for governance documentation)
+    results['gbdt'] = train_gbdt_model(n_samples=gbdt_samples, cv=5)
     
     # Train GNN (optional)
     results['gnn'] = train_gnn_model(epochs=epochs)

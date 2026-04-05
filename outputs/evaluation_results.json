@@ -1,0 +1,120 @@
+{
+  "generated_at": "2026-04-05T10:56:41.811752Z",
+  "models": [
+    {
+      "model_name": "GBDT",
+      "accuracy": 0.8897110288971103,
+      "precision": 0.4388297872336535,
+      "recall": 0.5129533678751161,
+      "f1": 0.4730052551165318,
+      "auroc": 0.8798858681555896,
+      "avg_precision": 0.44253850514821297,
+      "confusion_matrix": [
+        [
+          8403,
+          633
+        ],
+        [
+          470,
+          495
+        ]
+      ],
+      "threshold": 0.65,
+      "n_test": 10001,
+      "n_fraud": 965,
+      "timestamp": "2026-04-05T10:56:33.372412Z"
+    },
+    {
+      "model_name": "Sequence Detector",
+      "accuracy": 1.0,
+      "precision": 0.9999999999915966,
+      "recall": 0.9999999999915966,
+      "f1": 0.9999999994915967,
+      "auroc": 0.9999999999904544,
+      "avg_precision": 0.9999999999465855,
+      "confusion_matrix": [
+        [
+          881,
+          0
+        ],
+        [
+          0,
+          119
+        ]
+      ],
+      "threshold": 0.1,
+      "n_test": 1000,
+      "n_fraud": 119,
+      "timestamp": "2026-04-05T10:56:37.943500Z"
+    },
+    {
+      "model_name": "LSTM Link Predictor",
+      "accuracy": 0.9966666666666667,
+      "precision": 0.9999999999893616,
+      "recall": 0.979166666656467,
+      "f1": 0.9894736837001662,
+      "auroc": 0.9990492724743897,
+      "avg_precision": 0.9963476785208537,
+      "confusion_matrix": [
+        [
+          504,
+          0
+        ],
+        [
+          2,
+          94
+        ]
+      ],
+      "threshold": 0.23,
+      "n_test": 600,
+      "n_fraud": 96,
+      "timestamp": "2026-04-05T10:56:39.427442Z"
+    },
+    {
+      "model_name": "GNN Node Classifier",
+      "accuracy": 0.8415841584158416,
+      "precision": 0.8383838383753698,
+      "recall": 0.9999999999879517,
+      "f1": 0.9120879115817533,
+      "auroc": 0.6526104417229494,
+      "avg_precision": 0.9047466313896495,
+      "confusion_matrix": [
+        [
+          2,
+          16
+        ],
+        [
+          0,
+          83
+        ]
+      ],
+      "threshold": 0.4,
+      "n_test": 101,
+      "n_fraud": 83,
+      "timestamp": "2026-04-05T10:56:39.759078Z"
+    },
+    {
+      "model_name": "Combined Pipeline",
+      "accuracy": 0.8968103189681031,
+      "precision": 0.4654994850664619,
+      "recall": 0.46839378238293433,
+      "f1": 0.466942148259853,
+      "auroc": 0.8779159699705711,
+      "avg_precision": 0.4350279392013435,
+      "confusion_matrix": [
+        [
+          8517,
+          519
+        ],
+        [
+          513,
+          452
+        ]
+      ],
+      "threshold": 0.61,
+      "n_test": 10001,
+      "n_fraud": 965,
+      "timestamp": "2026-04-05T10:56:40.780220Z"
+    }
+  ]
+}
