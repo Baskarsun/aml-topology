@@ -34,7 +34,7 @@ TIER_COLORS = {
     "HIGH":     "#FF6B35",
     "MEDIUM":   "#FFB800",
     "LOW":      "#00FF94",
-    "CLEAN":    "#555555",
+    "CLEAN":    "#9090a0",
 }
 TIER_SYMBOLS = {"CRITICAL": "▲", "HIGH": "▲", "MEDIUM": "◆", "LOW": "✓", "CLEAN": "○"}
 STATE_ICONS  = {
@@ -45,33 +45,63 @@ STATE_ICONS  = {
 }
 STATES       = ["Unreviewed", "Investigating", "False Positive", "Escalated"]
 
-# Mapping from signal keyword → (icon, phase name, colour)
+# Mapping from signal keyword → (icon, phase name, colour, human description)
 _PHASE_SIGNAL_MAP = {
-    "fan_in":       ("🕸️", "Graph Topology",  "#FFB800"),
-    "fan_out":      ("🕸️", "Graph Topology",  "#FFB800"),
-    "cycle":        ("🕸️", "Graph Topology",  "#FF2B2B"),
-    "bridge":       ("🕸️", "Graph Topology",  "#FFB800"),
-    "cyber":        ("🔐", "Behavioral",       "#FFB800"),
-    "login":        ("🔐", "Behavioral",       "#FFB800"),
-    "travel":       ("🔐", "Behavioral",       "#FF2B2B"),
-    "risk_esc":     ("⏰", "Temporal",         "#FF2B2B"),
-    "temporal":     ("⏰", "Temporal",         "#FFB800"),
-    "volume":       ("⏰", "Temporal",         "#FFB800"),
-    "structuring":  ("⏰", "Temporal",         "#FF2B2B"),
-    "lstm":         ("🔗", "LSTM",             "#00FFFF"),
-    "emerging":     ("🔗", "LSTM",             "#00FFFF"),
-    "link_pred":    ("🔗", "LSTM",             "#00FFFF"),
-    "gbdt":         ("📈", "GBDT",             "#FFB800"),
-    "gnn":          ("🧠", "GNN",              "#00FFFF"),
+    "fan_in":              ("🕸️", "Graph Topology", "#FFB800", "Multiple sources funnelling funds into this account"),
+    "fan_out":             ("🕸️", "Graph Topology", "#FFB800", "Funds dispersed to many different recipients"),
+    "cycle":               ("🕸️", "Graph Topology", "#FF2B2B", "Circular transaction loop detected in network"),
+    "high_centrality":     ("🕸️", "Graph Topology", "#FFB800", "Account is a high-traffic hub in the transaction graph"),
+    "bridge":              ("🕸️", "Graph Topology", "#FFB800", "Account bridges otherwise disconnected communities"),
+    "cyber":               ("🔐", "Behavioral",      "#FFB800", "Suspicious device or IP behaviour detected"),
+    "login":               ("🔐", "Behavioral",      "#FFB800", "Anomalous login pattern or credential activity"),
+    "travel":              ("🔐", "Behavioral",      "#FF2B2B", "Impossible travel — access from geographically distant locations"),
+    "risk_esc":            ("⏰", "Temporal",         "#FF2B2B", "Risk score escalating over time"),
+    "risk_escalation":     ("⏰", "Temporal",         "#FF2B2B", "Risk score escalating over time"),
+    "temporal_concentration": ("⏰", "Temporal",      "#FFB800", "Transactions clustered in short time bursts"),
+    "volume":              ("⏰", "Temporal",         "#FFB800", "Unusual transaction volume spike"),
+    "structuring":         ("⏰", "Temporal",         "#FF2B2B", "Transactions structured to avoid reporting thresholds"),
+    "lstm":                ("🔗", "LSTM",             "#00FFFF", "Sequence model flagged abnormal transaction pattern"),
+    "emerging":            ("🔗", "LSTM",             "#00FFFF", "New high-probability link predicted to emerge"),
+    "emerging_link":       ("🔗", "LSTM",             "#00FFFF", "New high-probability link predicted to emerge"),
+    "link_pred":           ("🔗", "LSTM",             "#00FFFF", "LSTM predicted likely future connection"),
+    "gbdt":                ("📈", "GBDT",             "#FFB800", "Gradient boosting model scored transaction as high risk"),
+    "gnn":                 ("🧠", "GNN",              "#00FFFF", "Graph neural network classified node as suspicious"),
 }
 
 
 def _signal_meta(sig: str):
     sig_low = sig.lower()
+    # Exact match first
+    if sig_low in _PHASE_SIGNAL_MAP:
+        return _PHASE_SIGNAL_MAP[sig_low]
+    # Partial keyword match
     for key, meta in _PHASE_SIGNAL_MAP.items():
         if key in sig_low:
             return meta
-    return ("⚠️", "Unknown", "#888888")
+    return ("⚠️", "Unknown", "#aaaaaa", "Unclassified detection signal")
+
+
+def _parse_signals(signals_raw: str) -> list[dict]:
+    """Deduplicate signals, count occurrences, and group by phase."""
+    from collections import Counter
+    if not signals_raw or signals_raw in ("", "nan"):
+        return []
+    parts = [s.strip() for s in signals_raw.split("|") if s.strip() and s.strip() != "nan"]
+    counts = Counter(parts)
+    total = len(parts)
+    result = []
+    for sig, count in counts.most_common():
+        icon, phase, color, desc = _signal_meta(sig)
+        result.append({
+            "signal": sig,
+            "count": count,
+            "pct": count / total * 100,
+            "icon": icon,
+            "phase": phase,
+            "color": color,
+            "desc": desc,
+        })
+    return result
 
 
 # ── Data loaders ───────────────────────────────────────────────────────────────
@@ -98,7 +128,7 @@ def _load_tx() -> pd.DataFrame | None:
 with st.sidebar:
     st.markdown("### ⚙️ Account Controls")
     date_from = st.date_input("Timeline From",
-                               datetime.utcnow().date() - timedelta(days=30))
+                               datetime.utcnow().date() - timedelta(days=365))
     date_to   = st.date_input("Timeline To", datetime.utcnow().date())
 
 # ── Header ─────────────────────────────────────────────────────────────────────
@@ -196,15 +226,15 @@ col_score, col_sigs, col_alert = st.columns([1, 2, 1])
 with col_score:
     bar_pct = int(risk_score * 100)
     st.markdown(
-        f'<div style="background:rgba(20,20,25,0.7);border:2px solid {tier_color}55;'
+        f'<div style="background:rgba(20,20,25,0.7);border:2px solid {tier_color}bb;'
         f'border-radius:16px;padding:24px;text-align:center">'
-        f'<div style="font-size:0.78rem;color:#777;text-transform:uppercase;'
+        f'<div style="font-size:0.78rem;color:#aaa;text-transform:uppercase;'
         f'letter-spacing:0.12em;margin-bottom:6px">Risk Level</div>'
         f'<div style="font-size:2.6rem;font-weight:700;color:{tier_color};line-height:1">'
         f'{tier_sym} {risk_level}</div>'
-        f'<div style="color:#888;font-size:1rem;margin-top:6px">'
-        f'Score: <b style="color:#ccc">{risk_score:.3f}</b></div>'
-        f'<div style="margin-top:14px;background:#111;border-radius:8px;height:7px">'
+        f'<div style="color:#bbb;font-size:1rem;margin-top:6px">'
+        f'Score: <b style="color:#fff">{risk_score:.3f}</b></div>'
+        f'<div style="margin-top:14px;background:#2a2a2a;border-radius:8px;height:7px">'
         f'<div style="background:{tier_color};border-radius:8px;height:7px;'
         f'width:{bar_pct}%;transition:width 0.4s ease"></div>'
         f'</div></div>',
@@ -213,20 +243,47 @@ with col_score:
 
 with col_sigs:
     st.markdown("**🔬 Active Signals**")
-    if signals_raw and signals_raw not in ("", "nan"):
-        signal_list = [s.strip() for s in signals_raw.split("|") if s.strip() and s.strip() != "nan"]
-        for sig in signal_list[:14]:
-            icon, phase, color = _signal_meta(sig)
+    parsed_signals = _parse_signals(signals_raw)
+    if parsed_signals:
+        total_signal_hits = sum(s["count"] for s in parsed_signals)
+        st.caption(f"{len(parsed_signals)} distinct signal type{'s' if len(parsed_signals) != 1 else ''} · {total_signal_hits} total hits")
+
+        # Group by phase
+        from collections import defaultdict
+        by_phase = defaultdict(list)
+        for s in parsed_signals:
+            by_phase[s["phase"]].append(s)
+
+        for phase, sigs in by_phase.items():
+            phase_icon = sigs[0]["icon"]
+            phase_color = sigs[0]["color"]
+            phase_hits = sum(s["count"] for s in sigs)
+            # Phase header
             st.markdown(
-                f'<div style="padding:4px 10px;margin:2px 0;border-radius:6px;'
-                f'background:rgba(0,0,0,0.3);border-left:3px solid {color};">'
-                f'{icon} <code style="color:{color};font-size:0.8rem">{sig}</code>'
-                f'<span style="color:#444;font-size:0.72rem"> ({phase})</span>'
-                f'</div>',
+                f'<div style="margin-top:8px;margin-bottom:2px;font-size:0.72rem;'
+                f'text-transform:uppercase;letter-spacing:0.1em;color:{phase_color};'
+                f'font-weight:600">{phase_icon} {phase} &nbsp;'
+                f'<span style="color:#888">({phase_hits} hits)</span></div>',
                 unsafe_allow_html=True,
             )
-        if len(signal_list) > 14:
-            st.caption(f"… and {len(signal_list) - 14} more signals")
+            for s in sigs:
+                bar_w = min(100, int(s["pct"] * 2))  # visual bar scaled to 50% max
+                count_badge = (
+                    f'<span style="background:{s["color"]}22;color:{s["color"]};'
+                    f'border-radius:4px;padding:1px 6px;font-size:0.72rem;'
+                    f'font-weight:700;margin-left:6px">×{s["count"]}</span>'
+                    if s["count"] > 1 else ""
+                )
+                st.markdown(
+                    f'<div style="padding:5px 10px;margin:2px 0;border-radius:6px;'
+                    f'background:rgba(0,0,0,0.35);border-left:3px solid {s["color"]};">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center">'
+                    f'<span style="color:#ccc;font-size:0.8rem">{s["signal"]}{count_badge}</span>'
+                    f'</div>'
+                    f'<div style="color:#999;font-size:0.71rem;margin-top:2px">{s["desc"]}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
     else:
         st.success("No alert signals — this account is CLEAN.")
 
@@ -299,7 +356,7 @@ if tx_df is not None and "source" in tx_df.columns and "target" in tx_df.columns
             barmode="group", height=300,
             margin=dict(l=0, r=0, t=20, b=0),
             xaxis=dict(showgrid=False, title="Date"),
-            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.07)",
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.12)",
                        title="Amount ($)"),
             legend=dict(orientation="h", y=1.12),
             font=dict(family="system-ui"),
@@ -344,7 +401,20 @@ if (tx_df is not None
 
         pos = nx.spring_layout(G_local, seed=42)
 
-        # Edges
+        # Resolve each node's tier
+        node_tiers = {}
+        for n in G_local.nodes():
+            if str(n) == selected:
+                node_tiers[n] = "__SELECTED__"
+            else:
+                tier = "CLEAN"
+                if "risk_level" in sim_df.columns:
+                    match = sim_df[sim_df[acc_col].astype(str) == str(n)]
+                    if len(match):
+                        tier = str(match.iloc[0].get("risk_level", "CLEAN"))
+                node_tiers[n] = tier
+
+        # Edges — visible on dark bg
         ex, ey = [], []
         for u, v in G_local.edges():
             x0, y0 = pos[u]; x1, y1 = pos[v]
@@ -352,57 +422,62 @@ if (tx_df is not None
 
         edge_tr = go.Scatter(
             x=ex, y=ey, mode="lines",
-            line=dict(width=1, color="#2a2a2a"),
+            line=dict(width=1, color="rgba(255,255,255,0.15)"),
             hoverinfo="none", showlegend=False,
         )
 
-        # Nodes
-        node_colors, node_sizes, hover_labels = [], [], []
-        for n in G_local.nodes():
-            if str(n) == selected:
-                node_colors.append("#00FFFF")
-                node_sizes.append(22)
-                hover_labels.append(f"⭐ {n} (selected)")
-            else:
-                tier = "CLEAN"
-                if "risk_level" in sim_df.columns:
-                    match = sim_df[sim_df[acc_col].astype(str) == str(n)]
-                    if len(match):
-                        tier = str(match.iloc[0].get("risk_level", "CLEAN"))
-                node_colors.append(TIER_COLORS.get(tier, "#555"))
-                node_sizes.append(12)
-                sym = TIER_SYMBOLS.get(tier, "○")
-                hover_labels.append(f"{sym} {n} [{tier}]")
+        # One trace per tier for a proper legend
+        TIER_DISPLAY = {
+            "__SELECTED__": ("⭐ Selected",  "#00FFFF", 20, "#ffffff"),
+            "CRITICAL":     ("▲ Critical",   "#FF2B2B", 14, "#FF2B2B"),
+            "HIGH":         ("▲ High",        "#FF6B35", 14, "#FF6B35"),
+            "MEDIUM":       ("◆ Medium",      "#FFB800", 12, "#FFB800"),
+            "LOW":          ("✓ Low",         "#00FF94", 10, "#00FF94"),
+            "CLEAN":        ("○ Clean",       "#9090a0", 10, "#bbbbcc"),
+        }
 
-        node_tr = go.Scatter(
-            x=[pos[n][0] for n in G_local.nodes()],
-            y=[pos[n][1] for n in G_local.nodes()],
-            mode="markers+text",
-            text=[str(n) for n in G_local.nodes()],
-            textposition="top center",
-            textfont=dict(size=8, color="#888"),
-            marker=dict(
-                size=node_sizes, color=node_colors,
-                line=dict(width=1, color="#333"),
-            ),
-            hovertext=hover_labels, hoverinfo="text",
-            showlegend=False,
-        )
+        traces = [edge_tr]
+        for tier_key, (label, color, size, text_color) in TIER_DISPLAY.items():
+            nodes_in_tier = [n for n, t in node_tiers.items() if t == tier_key]
+            if not nodes_in_tier:
+                continue
+            border_color = "#ffffff" if tier_key == "__SELECTED__" else "#3a3a4a"
+            border_width = 2 if tier_key == "__SELECTED__" else 1
+            hover = [
+                f"⭐ {n} (selected)" if tier_key == "__SELECTED__"
+                else f"{TIER_SYMBOLS.get(tier_key, '●')} {n} [{tier_key}]"
+                for n in nodes_in_tier
+            ]
+            traces.append(go.Scatter(
+                x=[pos[n][0] for n in nodes_in_tier],
+                y=[pos[n][1] for n in nodes_in_tier],
+                mode="markers+text",
+                name=label,
+                text=[str(n) for n in nodes_in_tier],
+                textposition="top center",
+                textfont=dict(size=9, color=text_color),
+                marker=dict(
+                    size=size, color=color,
+                    line=dict(width=border_width, color=border_color),
+                ),
+                hovertext=hover, hoverinfo="text",
+            ))
 
-        fig_local = go.Figure(data=[edge_tr, node_tr])
+        fig_local = go.Figure(data=traces)
         fig_local.update_layout(
             template="plotly_dark",
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(5,5,10,1)",
-            height=420, margin=dict(l=0, r=0, t=10, b=0),
+            height=420, margin=dict(l=0, r=0, t=10, b=40),
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            legend=dict(
+                orientation="h", y=-0.08, x=0.5, xanchor="center",
+                font=dict(size=11, color="#ccc"),
+                bgcolor="rgba(0,0,0,0)",
+            ),
             font=dict(family="system-ui"),
         )
         st.plotly_chart(fig_local, use_container_width=True)
-        st.caption(
-            f"Cyan = `{selected}` (selected account). "
-            "Other node colours = counterparty risk tier."
-        )
     else:
         st.info("No transaction connections found for this account.")
 else:

@@ -104,12 +104,27 @@ aml-topology/
 ├── configs/
 │   └── rules.yml                    # Neuro-symbolic rule toggles & weights
 │
+├── evaluate_models.py               # Model evaluation harness (Phase 4 governance)
+│
 ├── scripts/
 │   ├── demo_live.py                 # Live demo runner
+│   ├── generate_eval_dataset.py     # Generates fixed held-out test set (seed=2025)
 │   ├── generate_gnn_embeddings.py   # Pre-computes GNN embeddings
 │   └── test_gnn_integration.py      # Integration test for GNN pipeline
 │
-├── outputs/                         # Generated outputs (graphs, reports)
+├── data/
+│   ├── eval_dataset.csv             # Held-out test set (10,001 rows, seed=2025)
+│   └── eval_dataset_metadata.json   # Checksum, fraud rate, train/test split metadata
+│
+├── outputs/                         # Generated evaluation outputs
+│   ├── evaluation_results.json      # Per-model metrics from evaluate_models.py
+│   ├── roc_curves.png               # ROC curves — all models
+│   ├── pr_curves.png                # Precision-Recall curves — all models
+│   ├── metrics_comparison.png       # F1/Precision/Recall bar chart
+│   └── confusion_matrix_<model>.png # Per-model confusion matrices
+│
+├── MODEL_GOVERNANCE.md              # Auditor-grade governance doc (v1.1)
+├── MODEL_EVALUATION_REPORT.md       # Auto-generated evaluation report
 ├── metrics.db                       # SQLite metrics store
 ├── simulation_pipeline_results.csv  # Pipeline run results
 ├── consolidated_risk_scores.csv     # Final risk rankings output
@@ -238,10 +253,44 @@ P(risk) = 1 − ∏(1 − pᵢ)  for independent signals p₁…pₙ
 | Property | Detail |
 |---|---|
 | Frameworks | LightGBM (default) → XGBoost → CatBoost → PyTorch MLP (fallback) |
-| Feature engineering | `log1p(amount)`, velocity (1h / 24h), MCC encoding, unique payees 24h |
-| Training | Stratified split, class-weight balancing |
+| Feature engineering | 21 features across 5 groups (see table below) |
+| Training | Stratified split + 5-fold CV; class-weight balancing via `scale_pos_weight` |
+| Threshold | F1-optimal per fold (`_find_best_threshold`); no fixed 0.5 cutoff |
 | Output | Per-transaction fraud probability score |
-| Persistence | `models/lgb_model.txt` + `models/gbdt_metadata.json` |
+| Persistence | `models/lgb_model.txt` + `models/gbdt_metadata.json` + `models/gbdt_cv_results.json` |
+
+**Feature groups (21 total):**
+
+| Group | Features | Notes |
+|---|---|---|
+| Amount | `amt_log`, `amt_gt_1k`, `amt_gt_3k` | Log-transform + binary thresholds at $1k/$3k |
+| Categorical | `mcc_enc`, `payment_type_enc`, `is_crypto` | Ordinal encoding + explicit crypto flag |
+| Device / IP | `device_change`, `ip_risk`, `ip_risk_high`, `ip_risk_mid` | Continuous + bucketised risk bands |
+| Velocity | `count_1h`, `sum_24h`, `uniq_payees_24h`, `high_velocity`, `avg_tx_24h`, `velocity_score` | Transaction rate and volume over sliding windows |
+| Geography | `is_international`, `is_high_risk_country` | High-risk jurisdictions: RU, NG, PK, CN |
+| Interactions | `amt_x_ip_risk`, `high_amt_device_change`, `crypto_high_risk_country` | Cross-feature fraud signals |
+
+**Key LightGBM hyperparameters:**
+
+| Parameter | Value | Rationale |
+|---|---|---|
+| `num_boost_round` | 500 | More rounds with lower LR for smoother convergence |
+| `num_leaves` | 63 | Deep enough to capture interaction features |
+| `learning_rate` | 0.03 | Conservative; pairs with 500 rounds |
+| `metric` | `auc` | Optimise AUROC directly under class imbalance |
+| `scale_pos_weight` | neg/pos ratio | Balances ~10% fraud minority class |
+| `feature_fraction` | 0.8 | Column subsampling for regularisation |
+
+**Exported functions:**
+
+| Function | Purpose |
+|---|---|
+| `generate_synthetic_transactions(n, seed)` | Generates transactions with feature-correlated fraud labels via `_compute_fraud_risk()` |
+| `featurize(df)` | Builds feature matrix + encoding maps from a dataframe |
+| `apply_featurize(df, maps)` | Applies pre-computed encoding maps to a new dataframe (use for test/inference sets) |
+| `train_gbdt(X, y, cv=5)` | Trains model with optional k-fold CV; saves weights and CV results |
+| `score_transaction(tx, maps, model)` | Scores a single transaction dict; returns probability |
+| `_find_best_threshold(y, scores)` | Sweeps thresholds to find F1-maximising cutoff |
 
 #### `src/adversarial_agent.py` + `src/adversarial_env.py` — PPO Adversarial Agent
 
@@ -389,14 +438,17 @@ Raw Transactions (CSV / DataFrame)
 
 ## 7. Machine Learning Models
 
-| Model | File | Framework | Size | Task |
-|---|---|---|---|---|
-| LSTM Link Predictor | `models/lstm_link_predictor.pt` | PyTorch | ~107 KB | Predict emerging financial links |
-| GNN Node Classifier | `models/gnn_adversarial.pt` | PyTorch | ~26 KB | Classify mule/fraud nodes |
-| GBDT Transaction Scorer | `models/lgb_model.txt` | LightGBM | ~680 KB | Per-transaction fraud probability |
-| PPO Adversarial Agent | `models/adversarial_agent.pt` | PyTorch | ~480 KB | Generate evasion patterns for hardening |
+| Model | File | Framework | Task | Held-out F1 | Held-out AUROC |
+|---|---|---|---|---|---|
+| LSTM Link Predictor | `models/lstm_link_predictor.pt` | PyTorch | Predict emerging financial links | 0.9895 | 0.9990 |
+| GNN Node Classifier | `models/gnn_adversarial.pt` | PyTorch | Classify mule/fraud nodes | 0.9121 | 0.6526 |
+| GBDT Transaction Scorer | `models/lgb_model.txt` | LightGBM | Per-transaction fraud probability | 0.4730 | 0.8799 |
+| Sequence Detector | `models/sequence_detector_model.pt` | PyTorch | Event-sequence anomaly detection | 1.0000 | 1.0000 |
+| PPO Adversarial Agent | `models/adversarial_agent.pt` | PyTorch | Generate evasion patterns for hardening | — | — |
 
-All models are accompanied by `*_metadata.json` files capturing feature lists, hyperparameters, training-time metrics, and version tags.
+Metrics are from `outputs/evaluation_results.json` (seed=2025, 10,001-row held-out test set). Sequence Detector and LSTM metrics are on independent synthetic test sets — see `MODEL_EVALUATION_REPORT.md` for caveats.
+
+All models are accompanied by `*_metadata.json` files capturing feature lists, hyperparameters, training-time metrics, and version tags. GBDT additionally produces `models/gbdt_cv_results.json` with per-fold cross-validation results.
 
 ---
 
@@ -665,7 +717,10 @@ impossible_travel:{ enabled: false, weight: 1.0 }
 | GNN memory scaling | Full graph must fit in memory; large networks (> 1M nodes) require batched GNN |
 | Baseline recomputation | Baselines are recomputed per run; no persistent database (future work) |
 | Streaming mode | Pipeline is batch-oriented; real-time streaming requires additional wrapper |
+| GBDT synthetic labels | Fraud labels are derived from a heuristic risk-scoring function, not real SAR filings — `_compute_fraud_risk()` in `gbdt_detector.py`; real-data retraining required for production |
+| GBDT threshold portability | F1-optimal threshold is tuned on synthetic data; must be re-derived on real labelled data before deployment |
+| Evaluation datasets | All held-out metrics are on synthetic data; Sequence Detector and LSTM use independent test sets that do not share the same transaction universe as the GBDT test set |
 
 ---
 
-*Last updated: 2026-04-03*
+*Last updated: 2026-04-05*

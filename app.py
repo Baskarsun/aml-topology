@@ -40,16 +40,16 @@ st.markdown("""
         font-family: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
+    /* Hide Streamlit chrome — footer and hamburger only; leave sidebar untouched */
     #MainMenu { visibility: hidden; }
     footer    { visibility: hidden; }
-    header    { visibility: hidden; }
 
     /* ── Glassmorphism card ─────────────────────────────────────────────── */
     .glass-card {
         background: rgba(20, 20, 25, 0.6);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
         border-radius: 16px;
         padding: 24px;
         margin-bottom: 16px;
@@ -61,7 +61,7 @@ st.markdown("""
         font-size: 0.82rem;
         text-transform: uppercase;
         letter-spacing: 0.1em;
-        color: #8888aa;
+        color: #aaaacc;
         margin-bottom: 6px;
     }
     .metric-value {
@@ -84,7 +84,7 @@ st.markdown("""
     .badge-HIGH     { background: rgba(255,107,53,0.15); color: #FF6B35; border: 1px solid #FF6B3544; }
     .badge-MEDIUM   { background: rgba(255,184,0,0.15);  color: #FFB800; border: 1px solid #FFB80044; }
     .badge-LOW      { background: rgba(0,255,148,0.15);  color: #00FF94; border: 1px solid #00FF9444; }
-    .badge-CLEAN    { background: rgba(100,100,100,0.15);color: #888888; border: 1px solid #55555544; }
+    .badge-CLEAN    { background: rgba(144,144,160,0.15);color: #bbbbcc; border: 1px solid #9090a044; }
 
     /* ── Section header ─────────────────────────────────────────────────── */
     .section-header {
@@ -98,17 +98,41 @@ st.markdown("""
 
     /* ── Custom scrollbar ───────────────────────────────────────────────── */
     ::-webkit-scrollbar       { width: 7px; height: 7px; }
-    ::-webkit-scrollbar-track { background: #0a0a0a; }
-    ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #555; }
+    ::-webkit-scrollbar-track { background: #1a1a1a; }
+    ::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #777; }
+
+    /* ── Nav links in sidebar ────────────────────────────────────────────── */
+    [data-testid="stSidebarNav"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Navigation ────────────────────────────────────────────────────────────────
-monitor_page = st.Page("pages/monitor.py",        title="Monitor",        icon="🛡️", default=True)
+# ── Page definitions ──────────────────────────────────────────────────────────
+monitor_page  = st.Page("pages/monitor.py",        title="Monitor",        icon="🛡️", default=True)
 pipeline_page = st.Page("pages/pipeline.py",       title="Pipeline",       icon="🔬")
 graph_page    = st.Page("pages/graph_explorer.py", title="Graph Explorer", icon="🕸️")
 account_page  = st.Page("pages/account_detail.py", title="Account Detail", icon="🔍")
 
-pg = st.navigation([monitor_page, pipeline_page, graph_page, account_page])
+# ── Routing (hidden — we draw the nav ourselves below) ────────────────────────
+pg = st.navigation(
+    [monitor_page, pipeline_page, graph_page, account_page],
+    position="hidden",
+)
+
+# ── Sidebar navigation — rendered before any page sidebar content ─────────────
+with st.sidebar:
+    st.markdown(
+        "<div style='padding:10px 4px 6px;'>"
+        "<span style='font-size:1.25rem;font-weight:700;color:#00FF94;"
+        "letter-spacing:0.04em;'>🛡️ FRAUD.GUARD</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.page_link(monitor_page,  label="Monitor",        icon="🛡️")
+    st.page_link(pipeline_page, label="Pipeline",       icon="🔬")
+    st.page_link(graph_page,    label="Graph Explorer", icon="🕸️")
+    st.page_link(account_page,  label="Account Detail", icon="🔍")
+    st.divider()
+
+# ── Run the selected page ─────────────────────────────────────────────────────
 pg.run()

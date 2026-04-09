@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FRAUD.GUARD — Investor Demo</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --accent:    #00FF94;
+    --critical:  #FF2B2B;
+    --high:      #FF6B35;
+    --medium:    #FFB800;
+    --low:       #00FF94;
+    --clean:     #9090a0;
+    --info:      #00BFFF;
+    --purple:    #A78BFA;
+    --bg:        #07080F;
+    --card:      rgba(255,255,255,0.04);
+    --border:    rgba(255,255,255,0.10);
+    --text:      #E2E8F0;
+    --muted:     #8892A4;
+    --font:      'Segoe UI', system-ui, sans-serif;
+  }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); }
+
+  /* ── Slide Container ──────────────────────────────────────────────── */
+  #deck { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 48px 64px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.45s ease, transform 0.45s ease;
+    transform: translateX(60px);
+    overflow-y: auto;
+  }
+  .slide.active { opacity: 1; pointer-events: all; transform: translateX(0); }
+  .slide.out    { opacity: 0; transform: translateX(-60px); }
+
+  /* Background grid */
+  .slide::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none;
+    background-image: linear-gradient(rgba(0,255,148,0.025) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(0,255,148,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  /* ── Navigation ───────────────────────────────────────────────────── */
+  #nav {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px; z-index: 100;
+    background: rgba(7,8,15,0.85); backdrop-filter: blur(12px);
+    border: 1px solid var(--border); border-radius: 999px; padding: 10px 20px;
+  }
+  .nav-btn {
+    background: none; border: 1px solid var(--border); color: var(--text);
+    border-radius: 999px; padding: 6px 18px; font-size: 13px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #slide-counter { font-size: 12px; color: var(--muted); min-width: 60px; text-align: center; }
+  .dot-row { display: flex; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); cursor: pointer; transition: all 0.25s; }
+  .dot.active { background: var(--accent); transform: scale(1.3); }
+
+  /* ── Typography ───────────────────────────────────────────────────── */
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+  h1 { font-size: clamp(2.4rem, 5vw, 4rem); font-weight: 700; line-height: 1.1; }
+  h2 { font-size: clamp(1.6rem, 3.5vw, 2.6rem); font-weight: 700; }
+  h3 { font-size: 1.15rem; font-weight: 600; }
+  .sub { font-size: clamp(1rem, 2vw, 1.25rem); color: var(--muted); line-height: 1.6; margin-top: 16px; }
+  .highlight { color: var(--accent); }
+  .red { color: var(--critical); }
+  .orange { color: var(--high); }
+  .yellow { color: var(--medium); }
+  .blue { color: var(--info); }
+  .purple { color: var(--purple); }
+
+  /* ── Glassmorphic Cards ───────────────────────────────────────────── */
+  .glass {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; backdrop-filter: blur(8px);
+    padding: 24px 28px;
+  }
+  .glass-sm { padding: 16px 20px; border-radius: 12px; }
+  .kpi-row { display: flex; gap: 16px; flex-wrap: wrap; width: 100%; justify-content: center; margin: 20px 0; }
+  .kpi {
+    flex: 1; min-width: 140px; max-width: 200px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px; text-align: center;
+  }
+  .kpi .val { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .kpi .lbl { font-size: 11px; color: var(--muted); letter-spacing: 1px; margin-top: 4px; text-transform: uppercase; }
+
+  /* ── Grid Layouts ─────────────────────────────────────────────────── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; width: 100%; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; width: 100%; }
+  .asymmetric { display: grid; grid-template-columns: 1.4fr 1fr; gap: 28px; width: 100%; align-items: start; }
+
+  /* ── Slide-specific styles ────────────────────────────────────────── */
+  /* Title */
+  #s0 { text-align: center; }
+  .logo-badge { display: inline-flex; align-items: center; gap: 10px; background: rgba(0,255,148,0.08); border: 1px solid rgba(0,255,148,0.25); border-radius: 999px; padding: 8px 22px; margin-bottom: 24px; }
+  .logo-icon { width: 28px; height: 28px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text { font-size: 15px; font-weight: 700; letter-spacing: 2px; color: var(--accent); }
+  .title-tag { display: inline-block; background: rgba(255,43,43,0.12); border: 1px solid rgba(255,43,43,0.3); color: var(--critical); border-radius: 999px; padding: 4px 16px; font-size: 12px; font-weight: 600; letter-spacing: 1px; margin-top: 20px; }
+  .invest-cta { margin-top: 40px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary { background: var(--accent); color: #000; border: none; border-radius: 999px; padding: 12px 32px; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s; letter-spacing: 0.5px; }
+  .btn-primary:hover { background: #00e080; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,255,148,0.35); }
+  .btn-outline { background: none; color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 12px 32px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Problem */
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; }
+  .big-stat { font-size: 3.2rem; font-weight: 800; line-height: 1; }
+  .stat-sub { font-size: 13px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .pain-point { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .pain-point:last-child { border-bottom: none; }
+  .pain-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; margin-top: 2px; }
+
+  /* Pipeline */
+  .pipeline-step {
+    display: flex; align-items: center; gap: 0; position: relative;
+  }
+  .pipe-box {
+    flex-shrink: 0; background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; text-align: center; min-width: 110px;
+    transition: all 0.3s; cursor: pointer;
+  }
+  .pipe-box:hover { border-color: var(--accent); background: rgba(0,255,148,0.06); }
+  .pipe-box.active-engine { border-color: var(--accent); background: rgba(0,255,148,0.08); box-shadow: 0 0 20px rgba(0,255,148,0.15); }
+  .pipe-arrow { color: var(--muted); font-size: 18px; padding: 0 6px; flex-shrink: 0; }
+  .pipe-icon { font-size: 22px; }
+  .pipe-label { font-size: 10px; font-weight: 600; letter-spacing: 0.5px; margin-top: 4px; color: var(--text); }
+  .pipe-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+
+  /* Model metrics bars */
+  .metric-bar { margin: 8px 0; }
+  .metric-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+  .bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+
+  /* Dashboard mockup */
+  .mockup-frame {
+    background: #0D0E1A; border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+    width: 100%;
+  }
+  .mockup-bar {
+    background: #111220; border-bottom: 1px solid var(--border);
+    padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+  }
+  .mockup-dots { display: flex; gap: 6px; }
+  .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .mockup-title { font-size: 11px; color: var(--muted); margin-left: 8px; }
+  .mockup-body { padding: 16px; }
+  .mock-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .mock-kpi { background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 12px 14px; }
+  .mock-kpi .v { font-size: 1.5rem; font-weight: 700; }
+  .mock-kpi .l { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .mock-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .mock-table th { color: var(--muted); font-weight: 600; padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  .mock-table td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .tier-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 10px; font-size: 10px; font-weight: 600; }
+  .tier-critical { background: rgba(255,43,43,0.15); color: var(--critical); border: 1px solid rgba(255,43,43,0.3); }
+  .tier-high { background: rgba(255,107,53,0.15); color: var(--high); border: 1px solid rgba(255,107,53,0.3); }
+  .tier-medium { background: rgba(255,184,0,0.15); color: var(--medium); border: 1px solid rgba(255,184,0,0.3); }
+  .tier-low { background: rgba(0,255,148,0.12); color: var(--low); border: 1px solid rgba(0,255,148,0.25); }
+  .tier-clean { background: rgba(144,144,160,0.1); color: var(--clean); border: 1px solid rgba(144,144,160,0.2); }
+
+  /* Graph mockup */
+  .graph-canvas { position: relative; width: 100%; height: 260px; background: #0D0E1A; border-radius: 10px; overflow: hidden; }
+  .gnode {
+    position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; cursor: pointer; transition: all 0.3s;
+    box-shadow: 0 0 20px currentColor;
+  }
+  .gnode:hover { transform: scale(1.3); z-index: 10; }
+  .gedge { position: absolute; background: rgba(255,255,255,0.08); transform-origin: left center; pointer-events: none; height: 1px; }
+
+  /* Risk gauge */
+  .gauge { position: relative; width: 120px; height: 60px; overflow: hidden; }
+  .gauge-track { width: 120px; height: 60px; background: conic-gradient(#1a1b2e 0%, #1a1b2e 100%); border-radius: 60px 60px 0 0; }
+
+  /* Roadmap */
+  .timeline { display: flex; gap: 0; width: 100%; position: relative; }
+  .timeline::before { content: ''; position: absolute; top: 30px; left: 40px; right: 40px; height: 2px; background: var(--border); }
+  .tl-item { flex: 1; display: flex; flex-direction: column; align-items: center; position: relative; }
+  .tl-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--accent); background: var(--bg); z-index: 1; margin-bottom: 10px; }
+  .tl-dot.done { background: var(--accent); }
+  .tl-label { font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 6px; }
+  .tl-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 11px; text-align: center; width: 100%; }
+
+  /* Donut chart  */
+  .donut-wrap { position: relative; width: 130px; height: 130px; flex-shrink: 0; }
+  .donut-wrap svg { position: absolute; inset: 0; }
+  .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+
+  /* Signal list */
+  .signal { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; font-size: 12px; }
+  .signal-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Competition table */
+  .comp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .comp-table th { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; padding: 8px 12px; text-align: center; border-bottom: 1px solid var(--border); }
+  .comp-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); text-align: center; }
+  .comp-table tr:first-child td { background: rgba(0,255,148,0.04); }
+  .comp-table td:first-child { text-align: left; font-weight: 600; }
+  .check { color: var(--accent); font-size: 16px; }
+  .cross { color: var(--critical); font-size: 16px; }
+  .partial { color: var(--medium); font-size: 14px; }
+
+  /* Animated counter */
+  .count-up { display: inline-block; }
+
+  /* CTA final */
+  .ask-boxes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; width: 100%; margin-top: 24px; }
+  .ask-box { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; text-align: center; }
+  .ask-box h3 { color: var(--accent); font-size: 1.4rem; font-weight: 800; }
+  .ask-box p { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+
+  /* ── Scrollbar ─────────────────────────────────────────────────────── */
+  .slide::-webkit-scrollbar { width: 4px; }
+  .slide::-webkit-scrollbar-track { background: transparent; }
+  .slide::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── Responsive ───────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .two-col, .asymmetric, .three-col { grid-template-columns: 1fr; }
+    .slide { padding: 24px; }
+    .pipeline-step { flex-wrap: wrap; gap: 8px; }
+    .pipe-arrow { display: none; }
+    .mock-kpi-row { grid-template-columns: 1fr 1fr; }
+    .ask-boxes { grid-template-columns: 1fr; }
+    .timeline { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .timeline::before { display: none; }
+    .tl-item { flex-direction: row; align-items: flex-start; gap: 14px; }
+    .tl-dot { margin-bottom: 0; flex-shrink: 0; margin-top: 4px; }
+    .comp-table { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="deck">
+
+  <!-- ══════════════════════ SLIDE 0 — Title ══════════════════════════ -->
+  <div class="slide active" id="s0">
+    <div class="logo-badge">
+      <div class="logo-icon">🛡</div>
+      <span class="logo-text">FRAUD.GUARD</span>
+    </div>
+    <div class="eyebrow">Investor Presentation · 2026</div>
+    <h1>The Intelligence Layer<br/>Financial Crime <span class="highlight">Never</span> Hides From</h1>
+    <p class="sub" style="max-width:620px">A production-grade, multi-engine Anti-Money Laundering platform that detects suspicious financial topologies up to <strong style="color:var(--accent)">21 days earlier</strong> than traditional rule-based systems.</p>
+    <div class="title-tag">🔴 LIVE PLATFORM · 5 DETECTION ENGINES · 4 AI MODELS</div>
+    <div class="invest-cta">
+      <button class="btn-primary" onclick="goTo(1)">▶ Begin Demo</button>
+      <button class="btn-outline" onclick="goTo(14)">Jump to Financials →</button>
+    </div>
+    <p style="font-size:11px; color:var(--muted); margin-top:28px">Use ← → arrow keys or click the dots below to navigate</p>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 1 — The Problem ════════════════════ -->
+  <div class="slide" id="s1">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">The Problem</div>
+      <h2>Money Laundering is a <span class="red">$2 Trillion</span> Blind Spot</h2>
+      <p class="sub" style="margin-bottom:28px">Global financial institutions lose up to 5% of annual revenue to money laundering — yet less than 1% of illicit funds are ever seized. The enemy is invisible, and the tools are broken.</p>
+      <div class="two-col">
+        <div>
+          <div class="three-col" style="gap:12px; margin-bottom:20px">
+            <div class="stat-card">
+              <div class="big-stat red">$2T+</div>
+              <div class="stat-sub">laundered annually worldwide (UNODC estimate)</div>
+            </div>
+            <div class="stat-card">
+              <div class="big-stat yellow">&lt;1%</div>
+              <div class="stat-sub">of illicit funds are ever detected and seized</div>
+            </div>
+            <div class="stat-card">
+              <div class="big-stat orange">$50B</div>
+              <div class="stat-sub">in annual fines to banks for AML compliance failures</div>
+            </div>
+          </div>
+          <div class="glass" style="margin-bottom:14px">
+            <div class="pain-point">
+              <div class="pain-icon" style="background:rgba(255,43,43,0.12); color:var(--critical)">📋</div>
+              <div>
+                <strong>Rule-based systems are reactive</strong>
+                <p style="font-size:12px; color:var(--muted); margin-top:4px">Static thresholds generate 95%+ false positives. Analysts are drowning in noise.</p>
+              </div>
+            </div>
+            <div class="pain-point">
+              <div class="pain-icon" style="background:rgba(255,107,53,0.12); color:var(--high)">🕸</div>
+              <div>
+                <strong>Complex typologies are invisible</strong>
+                <p style="font-size:12px; color:var(--muted); margin-top:4px">Multi-hop laundering chains, mule networks, and smurfing evade simple transaction rules.</p>
+              </div>
+            </div>
+            <div class="pain-point">
+              <div class="pain-icon" style="background:rgba(255,184,0,0.12); color:var(--medium)">⏱</div>
+              <div>
+                <strong>Detection comes weeks too late</strong>
+                <p style="font-size:12px; color:var(--muted); margin-top:4px">By the time a pattern is flagged, the funds have moved through 3–5 additional hops.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="glass" style="display:flex; flex-direction:column; gap:14px">
+          <h3 style="margin-bottom:4px">What Banks Currently Use</h3>
+          <div style="display:flex; flex-direction:column; gap:10px">
+            <div style="padding:12px; background:rgba(255,43,43,0.06); border:1px solid rgba(255,43,43,0.2); border-radius:10px">
+              <div style="font-size:12px; font-weight:600; color:var(--critical); margin-bottom:4px">❌ Static Rule Engines</div>
+              <div style="font-size:11px; color:var(--muted)">Threshold-based alerts: every transaction &gt;$10k is flagged. No context. No topology. Constant noise.</div>
+            </div>
+            <div style="padding:12px; background:rgba(255,184,0,0.06); border:1px solid rgba(255,184,0,0.2); border-radius:10px">
+              <div style="font-size:12px; font-weight:600; color:var(--medium); margin-bottom:4px">⚠ Legacy ML (Single-Feature)</div>
+              <div style="font-size:11px; color:var(--muted)">Score individual transactions in isolation. Miss multi-account coordinated laundering.</div>
+            </div>
+            <div style="padding:12px; background:rgba(255,43,43,0.06); border:1px solid rgba(255,43,43,0.2); border-radius:10px">
+              <div style="font-size:12px; font-weight:600; color:var(--critical); margin-bottom:4px">❌ No Early Warning</div>
+              <div style="font-size:11px; color:var(--muted)">Detection happens after patterns are fully formed. Intervention is too late to recover funds.</div>
+            </div>
+            <div style="padding:14px; background:rgba(0,255,148,0.06); border:1px solid rgba(0,255,148,0.2); border-radius:10px; margin-top:8px">
+              <div style="font-size:12px; font-weight:700; color:var(--accent); margin-bottom:4px">✅ What FRAUD.GUARD Does</div>
+              <div style="font-size:11px; color:var(--muted)">5-engine topology analysis with 7–21 day early warning. Graph-native. Adversarially hardened. Explainable.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 2 — Solution Overview ══════════════ -->
+  <div class="slide" id="s2">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Our Solution</div>
+      <h2>FRAUD.GUARD: <span class="highlight">5 Engines.</span> One Unified Risk Score.</h2>
+      <p class="sub" style="margin-bottom:28px">Every transaction flows through a multi-layered detection pipeline. No single point of failure. Signals are fused into a single, explainable risk tier.</p>
+      <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:12px; margin-bottom:28px; align-items:center">
+        <div class="pipe-box" style="border-color:var(--info); background:rgba(0,191,255,0.06)">
+          <div class="pipe-icon">📦</div>
+          <div class="pipe-label" style="color:var(--info)">Transactions</div>
+          <div class="pipe-sub">Raw data in</div>
+        </div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box active-engine">
+          <div class="pipe-icon">🕸</div>
+          <div class="pipe-label">Graph Engine</div>
+          <div class="pipe-sub">Fan-in/out · Cycles</div>
+        </div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box" style="border-color:var(--high);">
+          <div class="pipe-icon">🧠</div>
+          <div class="pipe-label" style="color:var(--high)">Behavioral</div>
+          <div class="pipe-sub">12 sub-detectors</div>
+        </div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box" style="border-color:var(--purple);">
+          <div class="pipe-icon">⏱</div>
+          <div class="pipe-label" style="color:var(--purple)">Temporal</div>
+          <div class="pipe-sub">6 forecasters</div>
+        </div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box" style="border-color:var(--medium);">
+          <div class="pipe-icon">🔗</div>
+          <div class="pipe-label" style="color:var(--medium)">LSTM</div>
+          <div class="pipe-sub">Link prediction</div>
+        </div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-box" style="border-color:var(--accent);">
+          <div class="pipe-icon">⚖</div>
+          <div class="pipe-label">Risk Score</div>
+          <div class="pipe-sub">Fused output</div>
+        </div>
+      </div>
+      <div class="three-col">
+        <div class="glass glass-sm">
+          <div style="font-size:20px; margin-bottom:8px">🕸</div>
+          <h3 class="highlight">Spatial Graph Analysis</h3>
+          <p style="font-size:12px; color:var(--muted); margin-top:6px; line-height:1.6">Models the entire transaction network as a graph. Detects cycles (layering), fan-in (placement), fan-out (integration), and bridge nodes — patterns invisible to per-transaction analysis.</p>
+          <div style="margin-top:12px; font-size:11px; color:var(--accent)">Weight: 20% of final score</div>
+        </div>
+        <div class="glass glass-sm">
+          <div style="font-size:20px; margin-bottom:8px">⏱</div>
+          <h3 class="purple">Temporal Forecasting</h3>
+          <p style="font-size:12px; color:var(--muted); margin-top:6px; line-height:1.6">6 time-series detectors establish per-account behavioral baselines. Bayesian signal fusion generates a 7-day risk escalation forecast — detecting laundering <strong style="color:white">before</strong> it fully forms.</p>
+          <div style="margin-top:12px; font-size:11px; color:var(--purple)">Weight: 35% · 7–21 day early warning</div>
+        </div>
+        <div class="glass glass-sm">
+          <div style="font-size:20px; margin-bottom:8px">🤖</div>
+          <h3 class="yellow">Deep Learning Suite</h3>
+          <p style="font-size:12px; color:var(--muted); margin-top:6px; line-height:1.6">LSTM (link prediction), GNN with adversarial rule constraints (node classification), and GBDT (per-transaction scoring) — trained against a PPO adversarial agent to harden against evasion.</p>
+          <div style="margin-top:12px; font-size:11px; color:var(--medium)">LSTM AUROC: 99.9% · Sequence: 100%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 3 — Dashboard: Monitor ═════════════ -->
+  <div class="slide" id="s3">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Product Demo · Screen 1 of 4</div>
+      <h2>Real-Time <span class="highlight">Operations Center</span></h2>
+      <p class="sub" style="margin-bottom:20px">Analysts see live KPIs, risk tier distribution, and a searchable alert feed — with one-click drill-down into any account.</p>
+      <div class="mockup-frame">
+        <div class="mockup-bar">
+          <div class="mockup-dots">
+            <div class="mockup-dot" style="background:#FF5F57"></div>
+            <div class="mockup-dot" style="background:#FFBD2E"></div>
+            <div class="mockup-dot" style="background:#28C840"></div>
+          </div>
+          <span class="mockup-title">🛡 FRAUD.GUARD — Monitor · Auto-refresh ON · Last run: 0.3s ago</span>
+        </div>
+        <div class="mockup-body">
+          <div class="mock-kpi-row">
+            <div class="mock-kpi">
+              <div class="v" style="color:var(--critical)">3</div>
+              <div class="l">⚠ Critical Accounts</div>
+            </div>
+            <div class="mock-kpi">
+              <div class="v" style="color:var(--high)">7</div>
+              <div class="l">▲ High Risk</div>
+            </div>
+            <div class="mock-kpi">
+              <div class="v" style="color:var(--accent)">50</div>
+              <div class="l">Total Accounts</div>
+            </div>
+            <div class="mock-kpi">
+              <div class="v" style="color:var(--info)">2.4s</div>
+              <div class="l">Pipeline Latency</div>
+            </div>
+          </div>
+          <!-- Mini donut + table side by side -->
+          <div style="display:grid; grid-template-columns:200px 1fr; gap:14px; align-items:start">
+            <div class="glass glass-sm" style="text-align:center">
+              <div style="font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:10px">Risk Distribution</div>
+              <!-- SVG Donut -->
+              <svg viewBox="0 0 120 120" width="100" height="100" style="display:block; margin:0 auto">
+                <circle cx="60" cy="60" r="48" fill="none" stroke="#1a1b2e" stroke-width="18"/>
+                <!-- clean 48% -->
+                <circle cx="60" cy="60" r="48" fill="none" stroke="var(--clean)" stroke-width="18" stroke-dasharray="144.5 157.1" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+                <!-- low 20% -->
+                <circle cx="60" cy="60" r="48" fill="none" stroke="var(--low)" stroke-width="18" stroke-dasharray="60.3 241.3" stroke-dashoffset="-144.5" transform="rotate(-90 60 60)"/>
+                <!-- medium 18% -->
+                <circle cx="60" cy="60" r="48" fill="none" stroke="var(--medium)" stroke-width="18" stroke-dasharray="54.3 247.3" stroke-dashoffset="-204.8" transform="rotate(-90 60 60)"/>
+                <!-- high 8% -->
+                <circle cx="60" cy="60" r="48" fill="none" stroke="var(--high)" stroke-width="18" stroke-dasharray="24.1 277.5" stroke-dashoffset="-259.1" transform="rotate(-90 60 60)"/>
+                <!-- critical 6% -->
+                <circle cx="60" cy="60" r="48" fill="none" stroke="var(--critical)" stroke-width="18" stroke-dasharray="18.1 283.5" stroke-dashoffset="-283.2" transform="rotate(-90 60 60)"/>
+                <text x="60" y="57" text-anchor="middle" fill="white" font-size="14" font-weight="700">50</text>
+                <text x="60" y="70" text-anchor="middle" fill="#8892A4" font-size="8">accounts</text>
+              </svg>
+              <div style="display:flex; flex-direction:column; gap:4px; margin-top:10px; font-size:10px; text-align:left">
+                <div style="display:flex; justify-content:space-between"><span style="color:var(--critical)">● Critical</span><span>3 (6%)</span></div>
+                <div style="display:flex; justify-content:space-between"><span style="color:var(--high)">● High</span><span>4 (8%)</span></div>
+                <div style="display:flex; justify-content:space-between"><span style="color:var(--medium)">● Medium</span><span>9 (18%)</span></div>
+                <div style="display:flex; justify-content:space-between"><span style="color:var(--low)">● Low</span><span>10 (20%)</span></div>
+                <div style="display:flex; justify-content:space-between"><span style="color:var(--clean)">● Clean</span><span>24 (48%)</span></div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:8px">⚡ Live Inference Feed</div>
+              <table class="mock-table">
+                <thead>
+                  <tr><th>Account</th><th>Risk Score</th><th>Tier</th><th>Top Signal</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="font-weight:600; color:var(--info)">ACC-0023</td>
+                    <td><strong style="color:var(--critical)">0.91</strong></td>
+                    <td><span class="tier-badge tier-critical">▲ CRITICAL</span></td>
+                    <td style="color:var(--muted)">cycle_detected + fan_in</td>
+                    <td><span style="color:var(--accent); font-size:10px; cursor:pointer">Investigate →</span></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--info)">ACC-0041</td>
+                    <td><strong style="color:var(--critical)">0.87</strong></td>
+                    <td><span class="tier-badge tier-critical">▲ CRITICAL</span></td>
+                    <td style="color:var(--muted)">volume_acceleration</td>
+                    <td><span style="color:var(--accent); font-size:10px; cursor:pointer">Investigate →</span></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--info)">ACC-0007</td>
+                    <td><strong style="color:var(--high)">0.72</strong></td>
+                    <td><span class="tier-badge tier-high">▲ HIGH</span></td>
+                    <td style="color:var(--muted)">structuring_sequence</td>
+                    <td><span style="color:var(--accent); font-size:10px; cursor:pointer">Investigate →</span></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--info)">ACC-0015</td>
+                    <td><strong style="color:var(--high)">0.68</strong></td>
+                    <td><span class="tier-badge tier-high">▲ HIGH</span></td>
+                    <td style="color:var(--muted)">bridge_node + behavioral_shift</td>
+                    <td><span style="color:var(--accent); font-size:10px; cursor:pointer">Investigate →</span></td>
+                  </tr>
+                  <tr>
+                    <td style="font-weight:600; color:var(--info)">ACC-0032</td>
+                    <td><strong style="color:var(--medium)">0.51</strong></td>
+                    <td><span class="tier-badge tier-medium">◆ MEDIUM</span></td>
+                    <td style="color:var(--muted)">temporal_concentration</td>
+                    <td><span style="color:var(--accent); font-size:10px; cursor:pointer">Investigate →</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 4 — Detection Pipeline ═════════════ -->
+  <div class="slide" id="s4">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Product Demo · Screen 2 of 4</div>
+      <h2>The <span class="highlight">8-Phase</span> Detection Pipeline</h2>
+      <p class="sub" style="margin-bottom:24px">Every transaction batch passes through 8 phases. Each phase enriches the detection signal — and any phase can independently trigger an alert.</p>
+      <div class="mockup-frame">
+        <div class="mockup-bar">
+          <div class="mockup-dots">
+            <div class="mockup-dot" style="background:#FF5F57"></div>
+            <div class="mockup-dot" style="background:#FFBD2E"></div>
+            <div class="mockup-dot" style="background:#28C840"></div>
+          </div>
+          <span class="mockup-title">🔬 FRAUD.GUARD — Pipeline Visualiser</span>
+        </div>
+        <div class="mockup-body">
+          <div style="display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-bottom:18px">
+            <div style="background:rgba(0,191,255,0.08); border:1px solid rgba(0,191,255,0.3); border-radius:10px; padding:10px 14px; text-align:center; min-width:100px">
+              <div style="font-size:16px">📥</div>
+              <div style="font-size:10px; font-weight:600; color:var(--info)">1. Ingest</div>
+              <div style="font-size:9px; color:var(--muted); margin-top:2px">14,143 txns</div>
+            </div>
+            <div style="display:flex; align-items:center; color:var(--muted)">→</div>
+            <div style="background:rgba(0,191,255,0.08); border:1px solid rgba(0,191,255,0.3); border-radius:10px; padding:10px 14px; text-align:center; min-width:100px">
+              <div style="font-size:16px">✅</div>
+              <div style="font-size:10px; font-weight:600; color:var(--info)">2. Validate</div>
+              <div style="font-size:9px; color:var(--muted); margin-top:2px">Schema OK</div>
+            </div>
+            <div style="display:flex; align-items:center; color:var(--muted)">→</div>
+            <div style="background:rgba(0,255,148,0.08); border:1px solid var(--accent); border-radius:10px; padding:10px 14px; text-align:center; min-width:100px; box-shadow:0 0 14px rgba(0,255,148,0.15)">
+              <div style="font-size:16px">🕸</div>
+              <div style="font-size:10px; font-weight:600; color:var(--accent)">3. Graph</div>
+              <div style="font-size:9px; color:var(--muted); margin-top:2px">12 signals ⚠</div>
+            </div>
+            <div style="display:flex; align-items:center; color:var(--muted)">→</div>
+            <div style="background:rgba(255,107,53,0.08); border:1px solid rgba(255,107,53,0.4); border-radius:10px; padding:10px 14px; text-align:center; min-width:100px; box-shadow:0 0 10px rgba(255,107,53,0.1)">
+              <div style="font-size:16px">🧠</div>
+              <div style="font-size:10px; font-weight:600; color:var(--high)">4. Behavioral</div>
+              <div style="font-size:9px; color:var(--muted); margin-top:2px">8 signals ⚠</div>
+            </div>
+            <div style="display:flex; align-items:center; color:var(--muted)">→</div>
+            <div style="background:rgba(167,139,250,0.08); border:1px solid rgba(167,139,250,0.4); border-radius:10px; padding:10px 14px; text-align:center; min-width:100px; box-shadow:0 0 10px rgba(167,139,250,0.1)">
+              <div style="font-size:16px">⏱</div>
+              <div style="font-size:10px; font-weight:600; color:var(--purple)">5. Temporal</div>
+              <div style="font-size:9px; color:var(--muted); margin-top:2px">6 forecasters</div>
+            </div>
+            <div style="display:flex; align-items:center; color:var(--muted)">→</div>
+            <div style="background:rgba(255,184,0,0.08); border:1px solid rgba(255,184,0,0.4); border-radius:10px; padding:10px 14px; text-align:center; min-width:100px; box-shadow:0 0 10px rgba(255,184,0,0.1)">
+              <div style="font-size:16px">🤖</div>
+              <div style="font-size:10px; font-weight:600; color:var(--medium)">6. ML Models</div>
+              <div style="font-size:9px; color:var(--muted); margin-top:2px">LSTM · GNN · GBDT</div>
+            </div>
+            <div style="display:flex; align-items:center; color:var(--muted)">→</div>
+            <div style="background:rgba(0,255,148,0.08); border:1px solid var(--accent); border-radius:10px; padding:10px 14px; text-align:center; min-width:100px">
+              <div style="font-size:16px">⚖</div>
+              <div style="font-size:10px; font-weight:600; color:var(--accent)">7. Consolidate</div>
+              <div style="font-size:9px; color:var(--muted); margin-top:2px">Weighted fusion</div>
+            </div>
+            <div style="display:flex; align-items:center; color:var(--muted)">→</div>
+            <div style="background:rgba(255,43,43,0.08); border:1px solid rgba(255,43,43,0.4); border-radius:10px; padding:10px 14px; text-align:center; min-width:100px">
+              <div style="font-size:16px">🚨</div>
+              <div style="font-size:10px; font-weight:600; color:var(--critical)">8. Alert</div>
+              <div style="font-size:9px; color:var(--muted); margin-top:2px">API + Dashboard</div>
+            </div>
+          </div>
+          <!-- Weight breakdown -->
+          <div class="glass glass-sm">
+            <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:12px">Risk Score Weight Distribution</div>
+            <div style="display:flex; flex-direction:column; gap:8px">
+              <div class="metric-bar">
+                <div class="metric-label"><span style="color:var(--purple)">⏱ Temporal (6 detectors)</span><span style="color:var(--accent)">35%</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:35%; background:var(--purple)"></div></div>
+              </div>
+              <div class="metric-bar">
+                <div class="metric-label"><span style="color:var(--medium)">🔗 LSTM Link Predictor</span><span style="color:var(--accent)">25%</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:25%; background:var(--medium)"></div></div>
+              </div>
+              <div class="metric-bar">
+                <div class="metric-label"><span style="color:var(--accent)">🕸 Graph / Spatial</span><span style="color:var(--accent)">20%</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:20%; background:var(--accent)"></div></div>
+              </div>
+              <div class="metric-bar">
+                <div class="metric-label"><span style="color:var(--high)">🧠 Behavioral</span><span style="color:var(--accent)">10%</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:10%; background:var(--high)"></div></div>
+              </div>
+              <div class="metric-bar">
+                <div class="metric-label"><span style="color:var(--info)">🔐 Cyber</span><span style="color:var(--accent)">10%</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:10%; background:var(--info)"></div></div>
+              </div>
+            </div>
+            <div style="font-size:10px; color:var(--accent); margin-top:10px">+ 15% boost when ≥2 engines flag the same account simultaneously</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 5 — Graph Explorer ═════════════════ -->
+  <div class="slide" id="s5">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Product Demo · Screen 3 of 4</div>
+      <h2>Interactive <span class="highlight">Transaction Network</span></h2>
+      <p class="sub" style="margin-bottom:20px">Analysts pan, zoom, and click any node to investigate. Risk tiers are colour-coded and accessible. The graph reveals laundering <em>topology</em> that spreadsheets never could.</p>
+      <div class="mockup-frame">
+        <div class="mockup-bar">
+          <div class="mockup-dots">
+            <div class="mockup-dot" style="background:#FF5F57"></div>
+            <div class="mockup-dot" style="background:#FFBD2E"></div>
+            <div class="mockup-dot" style="background:#28C840"></div>
+          </div>
+          <span class="mockup-title">🕸 FRAUD.GUARD — Graph Explorer · 50 nodes · 143 edges</span>
+        </div>
+        <div class="mockup-body" style="display:grid; grid-template-columns:1fr 220px; gap:14px">
+          <!-- Graph canvas -->
+          <div class="graph-canvas" id="graphCanvas">
+            <!-- SVG edges -->
+            <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" id="graphSVG"></svg>
+            <!-- Nodes rendered by JS -->
+          </div>
+          <!-- Sidebar -->
+          <div style="display:flex; flex-direction:column; gap:10px">
+            <div class="glass glass-sm">
+              <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px">Legend</div>
+              <div style="display:flex; flex-direction:column; gap:6px; font-size:11px">
+                <div style="display:flex; align-items:center; gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:var(--critical);box-shadow:0 0 6px var(--critical)"></div>▲ Critical</div>
+                <div style="display:flex; align-items:center; gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:var(--high);box-shadow:0 0 6px var(--high)"></div>▲ High</div>
+                <div style="display:flex; align-items:center; gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:var(--medium);box-shadow:0 0 6px var(--medium)"></div>◆ Medium</div>
+                <div style="display:flex; align-items:center; gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:var(--low)"></div>✓ Low</div>
+                <div style="display:flex; align-items:center; gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:var(--clean)"></div>○ Clean</div>
+              </div>
+            </div>
+            <div class="glass glass-sm" id="nodeDetail">
+              <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px">Account Detail</div>
+              <div id="nodeDetailContent" style="font-size:11px; color:var(--muted)">Click any node to inspect…</div>
+            </div>
+            <div class="glass glass-sm">
+              <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px">Active Patterns</div>
+              <div style="display:flex; flex-direction:column; gap:4px; font-size:10px">
+                <div style="color:var(--critical)">● 3× Cycle (A→B→C→A)</div>
+                <div style="color:var(--high)">● 2× Fan-In detected</div>
+                <div style="color:var(--high)">● 1× Bridge node</div>
+                <div style="color:var(--medium)">● 4× Structuring seq.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 6 — Account Investigation ══════════ -->
+  <div class="slide" id="s6">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Product Demo · Screen 4 of 4</div>
+      <h2>Account <span class="highlight">Deep-Dive</span> Investigation</h2>
+      <p class="sub" style="margin-bottom:20px">One click from the monitor takes an analyst straight to the full account profile — signals, timeline, counterparty graph, and alert management in a single view.</p>
+      <div class="mockup-frame">
+        <div class="mockup-bar">
+          <div class="mockup-dots">
+            <div class="mockup-dot" style="background:#FF5F57"></div>
+            <div class="mockup-dot" style="background:#FFBD2E"></div>
+            <div class="mockup-dot" style="background:#28C840"></div>
+          </div>
+          <span class="mockup-title">🔍 FRAUD.GUARD — Account Detail · ACC-0023 · <span style="color:var(--critical)">▲ CRITICAL</span></span>
+        </div>
+        <div class="mockup-body">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+            <div>
+              <!-- Risk gauge -->
+              <div class="glass glass-sm" style="margin-bottom:12px">
+                <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px">Risk Score</div>
+                <div style="display:flex; align-items:center; gap:16px">
+                  <div>
+                    <div style="font-size:2.8rem; font-weight:800; color:var(--critical); line-height:1">0.91</div>
+                    <div style="font-size:10px; color:var(--muted); margin-top:4px">CRITICAL RISK</div>
+                  </div>
+                  <div style="flex:1">
+                    <div style="height:10px; background:var(--border); border-radius:5px; overflow:hidden">
+                      <div style="width:91%; height:100%; background:linear-gradient(90deg, var(--medium), var(--critical)); border-radius:5px"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:9px; color:var(--muted); margin-top:4px"><span>0.0</span><span>0.5</span><span>1.0</span></div>
+                  </div>
+                </div>
+              </div>
+              <!-- Signals -->
+              <div class="glass glass-sm">
+                <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px">Active Detection Signals</div>
+                <div style="display:flex; flex-direction:column; gap:6px">
+                  <div class="signal"><div class="signal-dot" style="background:var(--accent)"></div><span style="color:var(--muted)">Graph →</span><span style="margin-left:4px">cycle_detected · fan_in_pattern</span></div>
+                  <div class="signal"><div class="signal-dot" style="background:var(--purple)"></div><span style="color:var(--muted)">Temporal →</span><span style="margin-left:4px">volume_acceleration · behavioral_shift</span></div>
+                  <div class="signal"><div class="signal-dot" style="background:var(--medium)"></div><span style="color:var(--muted)">LSTM →</span><span style="margin-left:4px">emerging_link (prob: 0.89)</span></div>
+                  <div class="signal"><div class="signal-dot" style="background:var(--high)"></div><span style="color:var(--muted)">Behavioral →</span><span style="margin-left:4px">impossible_travel</span></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <!-- Transaction timeline mini chart -->
+              <div class="glass glass-sm" style="margin-bottom:12px">
+                <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px">Transaction Timeline (30d)</div>
+                <svg viewBox="0 0 300 80" style="width:100%; height:70px">
+                  <defs>
+                    <linearGradient id="inGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent)" stop-opacity="0.4"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></linearGradient>
+                    <linearGradient id="outGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--critical)" stop-opacity="0.4"/><stop offset="100%" stop-color="var(--critical)" stop-opacity="0"/></linearGradient>
+                  </defs>
+                  <!-- Incoming (green) -->
+                  <path d="M0,70 L30,60 L60,55 L90,50 L120,40 L150,35 L180,25 L210,20 L240,10 L270,5 L300,2 L300,80 L0,80" fill="url(#inGrad)"/>
+                  <path d="M0,70 L30,60 L60,55 L90,50 L120,40 L150,35 L180,25 L210,20 L240,10 L270,5 L300,2" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+                  <!-- Outgoing (red) -->
+                  <path d="M0,72 L30,68 L60,65 L90,64 L120,62 L150,58 L180,52 L210,45 L240,38 L270,30 L300,22 L300,80 L0,80" fill="url(#outGrad)"/>
+                  <path d="M0,72 L30,68 L60,65 L90,64 L120,62 L150,58 L180,52 L210,45 L240,38 L270,30 L300,22" fill="none" stroke="var(--critical)" stroke-width="1.5"/>
+                </svg>
+                <div style="display:flex; gap:14px; font-size:9px; color:var(--muted); margin-top:4px">
+                  <span style="color:var(--accent)">— Incoming</span>
+                  <span style="color:var(--critical)">— Outgoing</span>
+                  <span style="margin-left:auto; color:var(--medium)">⚠ Volume spike: +340% vs baseline</span>
+                </div>
+              </div>
+              <!-- Alert management -->
+              <div class="glass glass-sm">
+                <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px">Alert Management</div>
+                <div style="display:flex; flex-direction:column; gap:8px; font-size:11px">
+                  <div style="display:flex; justify-content:space-between; align-items:center">
+                    <span style="color:var(--muted)">Status</span>
+                    <span style="background:rgba(255,184,0,0.15); color:var(--medium); border:1px solid rgba(255,184,0,0.3); border-radius:999px; padding:2px 12px; font-size:10px">Under Review</span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; align-items:center">
+                    <span style="color:var(--muted)">Assigned To</span>
+                    <span>J. Martinez</span>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; align-items:center">
+                    <span style="color:var(--muted)">Created</span>
+                    <span>2026-04-05 09:14</span>
+                  </div>
+                  <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:6px; padding:8px; font-size:10px; color:var(--muted)">
+                    "Confirmed 3-hop cycle via intermediary accounts. Escalating to SAR filing. Amounts just below CTR threshold — structuring."
+                  </div>
+                  <div style="display:flex; gap:8px; margin-top:4px">
+                    <div style="flex:1; background:rgba(255,43,43,0.1); border:1px solid rgba(255,43,43,0.3); border-radius:8px; padding:8px; text-align:center; font-size:10px; color:var(--critical); cursor:pointer">Escalate SAR</div>
+                    <div style="flex:1; background:rgba(0,255,148,0.08); border:1px solid rgba(0,255,148,0.2); border-radius:8px; padding:8px; text-align:center; font-size:10px; color:var(--accent); cursor:pointer">Mark Resolved</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 7 — AML Typologies ═════════════════ -->
+  <div class="slide" id="s7">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Detection Coverage</div>
+      <h2>Every Major <span class="highlight">AML Typology</span> Covered</h2>
+      <p class="sub" style="margin-bottom:24px">FRAUD.GUARD is aligned with FATF guidance and FinCEN reporting requirements. From placement to integration — and everything in between.</p>
+      <div class="three-col" style="margin-bottom:16px">
+        <div class="glass glass-sm">
+          <div style="font-size:18px; margin-bottom:6px">🔄</div>
+          <h3 class="highlight" style="font-size:13px">Layering (Obfuscation)</h3>
+          <p style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">Cycle detection via CSR adjacency + bounded DFS. Identifies A→B→C→A circular flows. Bridge-node centrality reveals connectors.</p>
+          <div style="margin-top:8px; font-size:10px; color:var(--accent)">Engine: Graph · Cycle DFS</div>
+        </div>
+        <div class="glass glass-sm">
+          <div style="font-size:18px; margin-bottom:6px">📥</div>
+          <h3 style="font-size:13px; color:var(--high)">Placement (Structuring)</h3>
+          <p style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">Fan-in detection + structuring sequence analysis. Flags repeated just-below-CTR-threshold transactions ($9k–$10k) that avoid FinCEN reporting.</p>
+          <div style="margin-top:8px; font-size:10px; color:var(--high)">Engine: Graph + Temporal</div>
+        </div>
+        <div class="glass glass-sm">
+          <div style="font-size:18px; margin-bottom:6px">📤</div>
+          <h3 style="font-size:13px; color:var(--purple)">Integration (Dispersion)</h3>
+          <p style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">Fan-out detection combined with temporal concentration analysis. Single source → many targets in a narrow time window = integration signature.</p>
+          <div style="margin-top:8px; font-size:10px; color:var(--purple)">Engine: Graph + Temporal</div>
+        </div>
+        <div class="glass glass-sm">
+          <div style="font-size:18px; margin-bottom:6px">🤖</div>
+          <h3 style="font-size:13px; color:var(--medium)">Money Mule Networks</h3>
+          <p style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">GNN node classifier identifies mule-cluster patterns — multi-hop accounts with dormancy-then-spike behavioral profiles and unusual counterparty diversity.</p>
+          <div style="margin-top:8px; font-size:10px; color:var(--medium)">Engine: GNN + Behavioral</div>
+        </div>
+        <div class="glass glass-sm">
+          <div style="font-size:18px; margin-bottom:6px">🏦</div>
+          <h3 style="font-size:13px; color:var(--info)">Smurfing</h3>
+          <p style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">Temporal concentration + volume acceleration detectors flag coordinated low-amount transactions across multiple accounts in synchronised bursts.</p>
+          <div style="margin-top:8px; font-size:10px; color:var(--info)">Engine: Temporal + LSTM</div>
+        </div>
+        <div class="glass glass-sm">
+          <div style="font-size:18px; margin-bottom:6px">🆔</div>
+          <h3 style="font-size:13px; color:var(--critical)">Synthetic Identity Fraud</h3>
+          <p style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">Thin-file accounts with sudden utilisation spikes. Behavioral shift detector + LSTM emerging-link predictor flag relationship formation before the typology fully emerges.</p>
+          <div style="margin-top:8px; font-size:10px; color:var(--critical)">Engine: Behavioral + Temporal</div>
+        </div>
+      </div>
+      <div style="text-align:center; padding:14px; background:rgba(0,255,148,0.06); border:1px solid rgba(0,255,148,0.2); border-radius:10px; font-size:13px">
+        🔐 Regulatory alignment: <strong style="color:var(--accent)">FinCEN CTR ($10k threshold)</strong> · <strong style="color:var(--accent)">FATF Risk-Based Approach</strong> · <strong style="color:var(--accent)">SAR filing workflow</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 8 — Model Performance ══════════════ -->
+  <div class="slide" id="s8">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Model Performance · Real Evaluation Data</div>
+      <h2>Production-Grade <span class="highlight">Model Accuracy</span></h2>
+      <p class="sub" style="margin-bottom:24px">All metrics measured on held-out test sets. Not lab results — these are the numbers from our deployed models evaluated on synthetic-but-realistic transaction data.</p>
+      <div class="two-col" style="margin-bottom:16px">
+        <div class="glass">
+          <h3 style="margin-bottom:16px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:1px">LSTM Link Predictor</h3>
+          <div style="display:flex; gap:16px; margin-bottom:16px">
+            <div style="text-align:center"><div style="font-size:1.8rem; font-weight:800; color:var(--accent)">99.9%</div><div style="font-size:10px; color:var(--muted)">AUROC</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem; font-weight:800; color:var(--accent)">100%</div><div style="font-size:10px; color:var(--muted)">Precision</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem; font-weight:800; color:var(--medium)">97.9%</div><div style="font-size:10px; color:var(--muted)">Recall</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem; font-weight:800; color:var(--accent)">98.9%</div><div style="font-size:10px; color:var(--muted)">F1</div></div>
+          </div>
+          <div class="metric-bar"><div class="metric-label"><span>AUROC</span><span style="color:var(--accent)">99.9%</span></div><div class="bar-track"><div class="bar-fill" style="width:99.9%; background:var(--accent)"></div></div></div>
+          <div class="metric-bar"><div class="metric-label"><span>Precision</span><span style="color:var(--accent)">100%</span></div><div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--accent)"></div></div></div>
+          <div class="metric-bar"><div class="metric-label"><span>Recall</span><span style="color:var(--medium)">97.9%</span></div><div class="bar-track"><div class="bar-fill" style="width:97.9%; background:var(--medium)"></div></div></div>
+          <div style="font-size:10px; color:var(--muted); margin-top:10px">n=600 test samples · 2-layer PyTorch LSTM</div>
+        </div>
+        <div class="glass">
+          <h3 style="margin-bottom:16px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:1px">Sequence Detector</h3>
+          <div style="display:flex; gap:16px; margin-bottom:16px">
+            <div style="text-align:center"><div style="font-size:1.8rem; font-weight:800; color:var(--accent)">100%</div><div style="font-size:10px; color:var(--muted)">AUROC</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem; font-weight:800; color:var(--accent)">100%</div><div style="font-size:10px; color:var(--muted)">Precision</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem; font-weight:800; color:var(--accent)">100%</div><div style="font-size:10px; color:var(--muted)">Recall</div></div>
+            <div style="text-align:center"><div style="font-size:1.8rem; font-weight:800; color:var(--accent)">100%</div><div style="font-size:10px; color:var(--muted)">F1</div></div>
+          </div>
+          <div class="metric-bar"><div class="metric-label"><span>AUROC</span><span style="color:var(--accent)">100%</span></div><div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--accent)"></div></div></div>
+          <div class="metric-bar"><div class="metric-label"><span>Precision</span><span style="color:var(--accent)">100%</span></div><div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--accent)"></div></div></div>
+          <div class="metric-bar"><div class="metric-label"><span>Recall</span><span style="color:var(--accent)">100%</span></div><div class="bar-track"><div class="bar-fill" style="width:100%; background:var(--accent)"></div></div></div>
+          <div style="font-size:10px; color:var(--muted); margin-top:10px">n=1,000 test samples · Event-sequence pattern engine</div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="glass">
+          <h3 style="margin-bottom:12px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:1px">GNN Node Classifier</h3>
+          <div style="display:flex; gap:16px; margin-bottom:12px">
+            <div style="text-align:center"><div style="font-size:1.5rem; font-weight:800; color:var(--medium)">84.2%</div><div style="font-size:10px; color:var(--muted)">Accuracy</div></div>
+            <div style="text-align:center"><div style="font-size:1.5rem; font-weight:800; color:var(--medium)">83.8%</div><div style="font-size:10px; color:var(--muted)">Precision</div></div>
+            <div style="text-align:center"><div style="font-size:1.5rem; font-weight:800; color:var(--accent)">100%</div><div style="font-size:10px; color:var(--muted)">Recall</div></div>
+          </div>
+          <div style="font-size:10px; color:var(--muted)">n=101 · GraphSAGE + adversarial rule constraints. High recall = zero false negatives on flagged mule nodes.</div>
+        </div>
+        <div class="glass">
+          <h3 style="margin-bottom:12px; font-size:14px; color:var(--muted); text-transform:uppercase; letter-spacing:1px">GBDT (LightGBM)</h3>
+          <div style="display:flex; gap:16px; margin-bottom:12px">
+            <div style="text-align:center"><div style="font-size:1.5rem; font-weight:800; color:var(--accent)">96.8%</div><div style="font-size:10px; color:var(--muted)">Accuracy</div></div>
+            <div style="text-align:center"><div style="font-size:1.5rem; font-weight:800; color:var(--medium)">87.0%</div><div style="font-size:10px; color:var(--muted)">Precision</div></div>
+            <div style="text-align:center"><div style="font-size:1.5rem; font-weight:800; color:var(--high)">6.0%</div><div style="font-size:10px; color:var(--muted)">Recall</div></div>
+          </div>
+          <div style="font-size:10px; color:var(--muted)">n=10,001 highly imbalanced (96.7% clean). Very high precision = near-zero false SAR filings. Recall improves with multi-engine fusion.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 9 — Adversarial Hardening ══════════ -->
+  <div class="slide" id="s9">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Unique Technology Differentiator</div>
+      <h2>Adversarially <span class="highlight">Hardened</span> Against Evasion</h2>
+      <p class="sub" style="margin-bottom:24px">Most AML systems fail because criminals adapt. We fight back with a <strong style="color:var(--accent)">PPO-trained adversarial agent</strong> that continuously generates evasion patterns — and uses them to harden our detectors.</p>
+      <div class="asymmetric" style="margin-bottom:20px">
+        <div>
+          <div class="glass" style="margin-bottom:16px">
+            <h3 style="margin-bottom:14px">How the Adversarial Loop Works</h3>
+            <div style="display:flex; flex-direction:column; gap:12px">
+              <div style="display:flex; align-items:flex-start; gap:12px">
+                <div style="width:28px; height:28px; border-radius:50%; background:rgba(255,43,43,0.15); border:1px solid rgba(255,43,43,0.4); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--critical); flex-shrink:0">1</div>
+                <div>
+                  <div style="font-size:13px; font-weight:600; color:var(--critical)">PPO Agent Attacks</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:4px">A Proximal Policy Optimisation agent generates realistic money-laundering patterns (peel chains, smurfing, mule networks) specifically designed to evade detection.</div>
+                </div>
+              </div>
+              <div style="display:flex; align-items:flex-start; gap:12px">
+                <div style="width:28px; height:28px; border-radius:50%; background:rgba(255,184,0,0.15); border:1px solid rgba(255,184,0,0.4); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--medium); flex-shrink:0">2</div>
+                <div>
+                  <div style="font-size:13px; font-weight:600; color:var(--medium)">Detection Engines Score</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:4px">The pipeline scores adversarial transactions. The agent's reward is — (detection_score): it is rewarded for evading detection, penalised for being caught.</div>
+                </div>
+              </div>
+              <div style="display:flex; align-items:flex-start; gap:12px">
+                <div style="width:28px; height:28px; border-radius:50%; background:rgba(0,255,148,0.12); border:1px solid rgba(0,255,148,0.3); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--accent); flex-shrink:0">3</div>
+                <div>
+                  <div style="font-size:13px; font-weight:600; color:var(--accent)">Models Retrain on Failures</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:4px">When the adversarial agent succeeds, we add its patterns to the training corpus. The detectors retrain. Evasion gets harder with every cycle.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
+            <div class="glass glass-sm" style="text-align:center">
+              <div style="font-size:10px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:1px">Evasion Patterns Known</div>
+              <div style="font-size:2rem; font-weight:800; color:var(--critical)">5</div>
+              <div style="font-size:10px; color:var(--muted); margin-top:4px">Peel · Fork · Smurfing · Funnel · Mule</div>
+            </div>
+            <div class="glass glass-sm" style="text-align:center">
+              <div style="font-size:10px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:1px">Action Space</div>
+              <div style="font-size:2rem; font-weight:800; color:var(--medium)">Hybrid</div>
+              <div style="font-size:10px; color:var(--muted); margin-top:4px">Discrete + Continuous Beta</div>
+            </div>
+          </div>
+        </div>
+        <div class="glass" style="display:flex; flex-direction:column; gap:14px">
+          <h3 style="margin-bottom:4px">PPO Agent Parameters</h3>
+          <div style="font-size:11px; display:flex; flex-direction:column; gap:8px">
+            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border)"><span style="color:var(--muted)">Algorithm</span><span style="color:var(--accent)">PPO (Gymnasium)</span></div>
+            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border)"><span style="color:var(--muted)">Discrete Actions</span><span>Pattern×5, Temporal×3, Chain×16, Fork×4, Exit×3</span></div>
+            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border)"><span style="color:var(--muted)">Continuous Actions</span><span>Peel%, Wash intensity, Cycle prob</span></div>
+            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border)"><span style="color:var(--muted)">Distribution</span><span>Beta (gradient stability)</span></div>
+            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border)"><span style="color:var(--muted)">Reward</span><span>−(detection_score)</span></div>
+            <div style="display:flex; justify-content:space-between; padding:8px 0"><span style="color:var(--muted)">Model size</span><span>469 KB (actor-critic)</span></div>
+          </div>
+          <div style="padding:12px; background:rgba(0,255,148,0.06); border:1px solid rgba(0,255,148,0.2); border-radius:10px; font-size:11px; color:var(--muted)">
+            <strong style="color:var(--accent)">Strategic moat:</strong> Traditional vendors have static rulesets. We train continuously against a self-improving adversary. The longer we run, the harder we are to evade.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 10 — REST API ═══════════════════════ -->
+  <div class="slide" id="s10">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Integration</div>
+      <h2>Enterprise-Ready <span class="highlight">REST API</span></h2>
+      <p class="sub" style="margin-bottom:24px">Plug FRAUD.GUARD into any existing banking infrastructure. Every detection capability is exposed as a documented, authenticated, rate-limited API endpoint.</p>
+      <div class="two-col">
+        <div>
+          <div class="glass" style="margin-bottom:14px; font-family:monospace; font-size:11px">
+            <div style="color:var(--muted); margin-bottom:10px; font-family:var(--font); font-size:12px; font-weight:600; letter-spacing:1px">SAMPLE REQUEST</div>
+<pre style="color:var(--text); line-height:1.7; overflow:auto">POST /score/transaction
+X-API-Key: your-key-here
+
+{
+  "account_id": "ACC-0023",
+  "amount": 9850.00,
+  "counterparty": "ACC-0041",
+  "payment_type": "WIRE",
+  "is_international": true,
+  "mcc": 6011
+}</pre>
+          </div>
+          <div class="glass" style="font-family:monospace; font-size:11px">
+            <div style="color:var(--muted); margin-bottom:10px; font-family:var(--font); font-size:12px; font-weight:600; letter-spacing:1px">RESPONSE</div>
+<pre style="color:var(--text); line-height:1.7; overflow:auto">{
+  <span style="color:var(--accent)">"risk_score"</span>: 0.91,
+  <span style="color:var(--accent)">"risk_level"</span>: <span style="color:var(--critical)">"CRITICAL"</span>,
+  <span style="color:var(--accent)">"component_scores"</span>: {
+    "spatial": 0.88,
+    "temporal": 0.94,
+    "lstm": 0.89
+  },
+  <span style="color:var(--accent)">"signals"</span>: [
+    "cycle_detected",
+    "structuring_sequence",
+    "volume_acceleration"
+  ],
+  <span style="color:var(--accent)">"explanation"</span>: "3-hop cycle + just-below
+  CTR amount ($9,850) + 340% vol surge"
+}</pre>
+          </div>
+        </div>
+        <div>
+          <div class="glass" style="margin-bottom:14px">
+            <h3 style="margin-bottom:14px; font-size:14px">API Endpoints</h3>
+            <div style="display:flex; flex-direction:column; gap:8px; font-size:12px">
+              <div style="display:flex; align-items:center; gap:10px; padding:8px; background:rgba(0,255,148,0.04); border-radius:6px">
+                <span style="background:rgba(0,191,255,0.15); color:var(--info); border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; font-family:monospace">GET</span>
+                <span style="font-family:monospace; color:var(--accent)">/health</span>
+                <span style="color:var(--muted); font-size:10px">System health + model status</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; padding:8px; background:rgba(0,255,148,0.04); border-radius:6px">
+                <span style="background:rgba(0,255,148,0.15); color:var(--accent); border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; font-family:monospace">POST</span>
+                <span style="font-family:monospace; color:var(--accent)">/score/transaction</span>
+                <span style="color:var(--muted); font-size:10px">GBDT per-transaction risk</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; padding:8px; background:rgba(0,255,148,0.04); border-radius:6px">
+                <span style="background:rgba(0,255,148,0.15); color:var(--accent); border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; font-family:monospace">POST</span>
+                <span style="font-family:monospace; color:var(--accent)">/analyze/sequence</span>
+                <span style="color:var(--muted); font-size:10px">Behavioral sequence analysis</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; padding:8px; background:rgba(0,255,148,0.04); border-radius:6px">
+                <span style="background:rgba(0,255,148,0.15); color:var(--accent); border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; font-family:monospace">POST</span>
+                <span style="font-family:monospace; color:var(--accent)">/predict/links</span>
+                <span style="color:var(--muted); font-size:10px">LSTM emerging link prediction</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; padding:8px; background:rgba(0,255,148,0.04); border-radius:6px">
+                <span style="background:rgba(0,255,148,0.15); color:var(--accent); border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; font-family:monospace">POST</span>
+                <span style="font-family:monospace; color:var(--accent)">/graph/analyze</span>
+                <span style="color:var(--muted); font-size:10px">GNN node classification</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; padding:8px; background:rgba(0,255,148,0.04); border-radius:6px">
+                <span style="background:rgba(0,255,148,0.15); color:var(--accent); border-radius:4px; padding:2px 8px; font-size:10px; font-weight:700; font-family:monospace">POST</span>
+                <span style="font-family:monospace; color:var(--accent)">/consolidate/risks</span>
+                <span style="color:var(--muted); font-size:10px">Multi-phase risk fusion</span>
+              </div>
+            </div>
+          </div>
+          <div class="glass glass-sm">
+            <h3 style="margin-bottom:10px; font-size:13px">Enterprise Security</h3>
+            <div style="display:flex; flex-direction:column; gap:6px; font-size:11px; color:var(--muted)">
+              <div>🔑 API key authentication (X-API-Key header)</div>
+              <div>🛡 Rate limiting: 200/min global · 30/min heavy endpoints</div>
+              <div>✅ Pydantic input validation (auto-422 on bad payload)</div>
+              <div>📋 Append-only audit log for all requests</div>
+              <div>🔒 Secrets via .env · Flask-Talisman HTTPS enforcement</div>
+              <div>⚡ 100+ transactions/second throughput</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 11 — Competitive Moat ══════════════ -->
+  <div class="slide" id="s11">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Competitive Landscape</div>
+      <h2>Why FRAUD.GUARD <span class="highlight">Wins</span></h2>
+      <p class="sub" style="margin-bottom:24px">We are not another rules engine. We are the only solution that combines topology-native graph analysis, temporal early warning, and adversarially-hardened ML in a single platform.</p>
+      <div style="overflow-x:auto; margin-bottom:20px">
+        <table class="comp-table">
+          <thead>
+            <tr>
+              <th style="text-align:left">Capability</th>
+              <th style="color:var(--accent)">FRAUD.GUARD</th>
+              <th>Legacy Rules Engines</th>
+              <th>Single-Model ML</th>
+              <th>Graph DB Vendors</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Graph topology analysis</td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="partial">~</span> manual</td>
+            </tr>
+            <tr>
+              <td>7–21 day early warning</td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="partial">~</span> limited</td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>Adversarial hardening (PPO)</td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>Multi-engine risk fusion</td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>Explainable signal attribution</td>
+              <td><span class="check">✓</span></td>
+              <td><span class="partial">~</span></td>
+              <td><span class="partial">~</span> black box</td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>Emerging link prediction (LSTM)</td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="partial">~</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>FinCEN / FATF regulatory alignment</td>
+              <td><span class="check">✓</span></td>
+              <td><span class="partial">~</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+            <tr>
+              <td>Time-to-value (no custom rules)</td>
+              <td><span class="check">✓</span></td>
+              <td><span class="cross">✗</span></td>
+              <td><span class="partial">~</span></td>
+              <td><span class="cross">✗</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="three-col" style="gap:12px">
+        <div style="padding:16px; background:rgba(0,255,148,0.06); border:1px solid rgba(0,255,148,0.2); border-radius:12px; text-align:center">
+          <div style="font-size:22px; margin-bottom:6px">🧱</div>
+          <div style="font-size:12px; font-weight:600; color:var(--accent)">Graph-Native Architecture</div>
+          <div style="font-size:11px; color:var(--muted); margin-top:4px">Transaction network is the primary data structure — not a derived view. No retrofitting.</div>
+        </div>
+        <div style="padding:16px; background:rgba(167,139,250,0.06); border:1px solid rgba(167,139,250,0.2); border-radius:12px; text-align:center">
+          <div style="font-size:22px; margin-bottom:6px">⚔</div>
+          <div style="font-size:12px; font-weight:600; color:var(--purple)">Self-Hardening</div>
+          <div style="font-size:11px; color:var(--muted); margin-top:4px">Adversarial PPO loop means the system improves every time a criminal finds a new evasion vector.</div>
+        </div>
+        <div style="padding:16px; background:rgba(0,191,255,0.06); border:1px solid rgba(0,191,255,0.2); border-radius:12px; text-align:center">
+          <div style="font-size:22px; margin-bottom:6px">⚡</div>
+          <div style="font-size:12px; font-weight:600; color:var(--info)">2–5s Full Pipeline</div>
+          <div style="font-size:11px; color:var(--muted); margin-top:4px">100k+ transactions in 2–5 seconds. Production latency, not academic benchmarks.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 12 — Market Opportunity ════════════ -->
+  <div class="slide" id="s12">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Market Opportunity</div>
+      <h2>A <span class="highlight">$15B</span> and Growing Market</h2>
+      <p class="sub" style="margin-bottom:28px">AML compliance technology is one of the fastest growing segments in fintech infrastructure, driven by rising regulatory penalties and the explosion of digital payment channels.</p>
+      <div class="three-col" style="margin-bottom:24px">
+        <div class="glass" style="text-align:center; padding:28px 20px">
+          <div style="font-size:3rem; font-weight:800; color:var(--accent)">$15B</div>
+          <div style="font-size:13px; font-weight:600; margin-top:8px">Total Addressable Market</div>
+          <div style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">Global AML compliance technology market (2025). Growing at 15.3% CAGR through 2030.</div>
+        </div>
+        <div class="glass" style="text-align:center; padding:28px 20px">
+          <div style="font-size:3rem; font-weight:800; color:var(--medium)">$4.2B</div>
+          <div style="font-size:13px; font-weight:600; margin-top:8px">Serviceable Addressable Market</div>
+          <div style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">Mid-to-large financial institutions actively replacing legacy rule engines with AI-native platforms.</div>
+        </div>
+        <div class="glass" style="text-align:center; padding:28px 20px">
+          <div style="font-size:3rem; font-weight:800; color:var(--high)">$420M</div>
+          <div style="font-size:13px; font-weight:600; margin-top:8px">Serviceable Obtainable Market</div>
+          <div style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.6">Realistic 3-year capture via direct enterprise sales + API licensing (10% of SAM).</div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="glass glass-sm">
+          <h3 style="margin-bottom:12px; font-size:13px">Market Tailwinds</h3>
+          <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; color:var(--muted)">
+            <div>📈 FinCEN fines up 400% in the last 5 years — compliance is now existential</div>
+            <div>💳 Digital payment volume growing 20% YoY — rule engines cannot scale</div>
+            <div>🌍 FATF expanding requirements to crypto and e-money institutions</div>
+            <div>🏛 EU AML Authority (AMLA) launching 2025 — EU-wide compliance overhaul</div>
+            <div>🤖 Regulators now expect explainable AI — pure black-box ML disallowed</div>
+          </div>
+        </div>
+        <div class="glass glass-sm">
+          <h3 style="margin-bottom:12px; font-size:13px">Target Customers</h3>
+          <div style="display:flex; flex-direction:column; gap:8px; font-size:12px">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <div>
+                <div style="font-weight:600">Tier 2 & 3 Banks</div>
+                <div style="font-size:10px; color:var(--muted)">Can't afford Big 4 consulting — need a turnkey solution</div>
+              </div>
+              <div style="color:var(--accent); font-weight:700">Primary</div>
+            </div>
+            <div style="height:1px; background:var(--border)"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <div>
+                <div style="font-weight:600">Neobanks & Fintechs</div>
+                <div style="font-size:10px; color:var(--muted)">High transaction velocity, API-first DNA</div>
+              </div>
+              <div style="color:var(--accent); font-weight:700">Primary</div>
+            </div>
+            <div style="height:1px; background:var(--border)"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <div>
+                <div style="font-weight:600">Payment Processors</div>
+                <div style="font-size:10px; color:var(--muted)">Cross-border & high-volume AML obligations</div>
+              </div>
+              <div style="color:var(--medium); font-weight:700">Secondary</div>
+            </div>
+            <div style="height:1px; background:var(--border)"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <div>
+                <div style="font-weight:600">Crypto Exchanges</div>
+                <div style="font-size:10px; color:var(--muted)">FATF Travel Rule, VASP compliance</div>
+              </div>
+              <div style="color:var(--medium); font-weight:700">Secondary</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 13 — Business Model ════════════════ -->
+  <div class="slide" id="s13">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Business Model</div>
+      <h2>SaaS + API <span class="highlight">Pricing</span></h2>
+      <p class="sub" style="margin-bottom:24px">Three tiers from self-serve to enterprise, plus a usage-based API component that scales naturally with customer transaction volume.</p>
+      <div class="three-col" style="margin-bottom:20px">
+        <div class="glass" style="text-align:center; border-color:rgba(144,144,160,0.3)">
+          <div style="font-size:11px; color:var(--muted); letter-spacing:2px; text-transform:uppercase; margin-bottom:10px">Starter</div>
+          <div style="font-size:2.5rem; font-weight:800; color:var(--text)">$2,500</div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:16px">/month</div>
+          <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; text-align:left; color:var(--muted)">
+            <div>✓ Up to 500k transactions/mo</div>
+            <div>✓ Dashboard (all 4 pages)</div>
+            <div>✓ Graph + Temporal engines</div>
+            <div>✓ REST API (200 req/min)</div>
+            <div>✓ Email alerts</div>
+            <div style="color:var(--border)">✗ LSTM / GNN models</div>
+            <div style="color:var(--border)">✗ Adversarial hardening</div>
+          </div>
+        </div>
+        <div class="glass" style="text-align:center; border-color:var(--accent); position:relative; overflow:visible">
+          <div style="position:absolute; top:-12px; left:50%; transform:translateX(-50%); background:var(--accent); color:#000; font-size:10px; font-weight:700; padding:3px 14px; border-radius:999px; white-space:nowrap">MOST POPULAR</div>
+          <div style="font-size:11px; color:var(--accent); letter-spacing:2px; text-transform:uppercase; margin-bottom:10px">Professional</div>
+          <div style="font-size:2.5rem; font-weight:800; color:var(--accent)">$8,000</div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:16px">/month</div>
+          <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; text-align:left; color:var(--muted)">
+            <div style="color:var(--text)">✓ Up to 5M transactions/mo</div>
+            <div style="color:var(--text)">✓ All 5 detection engines</div>
+            <div style="color:var(--text)">✓ LSTM + GNN models</div>
+            <div style="color:var(--text)">✓ Adversarial hardening</div>
+            <div style="color:var(--text)">✓ SAR workflow integration</div>
+            <div style="color:var(--text)">✓ Slack / email alerting</div>
+            <div style="color:var(--border)">✗ On-premise deployment</div>
+          </div>
+        </div>
+        <div class="glass" style="text-align:center; border-color:rgba(167,139,250,0.4)">
+          <div style="font-size:11px; color:var(--purple); letter-spacing:2px; text-transform:uppercase; margin-bottom:10px">Enterprise</div>
+          <div style="font-size:2.5rem; font-weight:800; color:var(--purple)">Custom</div>
+          <div style="font-size:11px; color:var(--muted); margin-bottom:16px">annual contract</div>
+          <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; text-align:left; color:var(--muted)">
+            <div style="color:var(--text)">✓ Unlimited transactions</div>
+            <div style="color:var(--text)">✓ On-premise / VPC deploy</div>
+            <div style="color:var(--text)">✓ Custom model retraining</div>
+            <div style="color:var(--text)">✓ Regulator reporting packs</div>
+            <div style="color:var(--text)">✓ Dedicated SLA (99.9%)</div>
+            <div style="color:var(--text)">✓ White-label option</div>
+            <div style="color:var(--text)">✓ Professional services</div>
+          </div>
+        </div>
+      </div>
+      <div class="glass glass-sm" style="display:flex; gap:28px; align-items:center; flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:1.6rem; font-weight:800; color:var(--accent)">$0.0012</div>
+          <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-top:4px">per API call (overage)</div>
+        </div>
+        <div style="width:1px; height:40px; background:var(--border)"></div>
+        <div style="text-align:center">
+          <div style="font-size:1.6rem; font-weight:800; color:var(--medium)">85%+</div>
+          <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-top:4px">gross margin (SaaS)</div>
+        </div>
+        <div style="width:1px; height:40px; background:var(--border)"></div>
+        <div style="text-align:center">
+          <div style="font-size:1.6rem; font-weight:800; color:var(--purple)">12mo+</div>
+          <div style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-top:4px">avg contract length</div>
+        </div>
+        <div style="width:1px; height:40px; background:var(--border)"></div>
+        <div style="flex:1; font-size:12px; color:var(--muted); line-height:1.6">
+          High switching costs once integrated into core compliance workflow. Regulatory audit trails create contractual lock-in beyond traditional SaaS churn drivers.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 14 — Roadmap ═══════════════════════ -->
+  <div class="slide" id="s14">
+    <div style="width:100%; max-width:960px">
+      <div class="eyebrow">Product Roadmap</div>
+      <h2>From <span class="highlight">MVP to Scale</span></h2>
+      <p class="sub" style="margin-bottom:32px">Core platform is production-ready today. Investment accelerates these four strategic milestones.</p>
+      <div class="timeline" style="margin-bottom:32px">
+        <div class="tl-item">
+          <div style="font-size:10px; color:var(--accent); font-weight:600; letter-spacing:1px; margin-bottom:8px; text-align:center">Q1 2026 ✓</div>
+          <div class="tl-dot done"></div>
+          <div class="tl-card">
+            <div style="font-size:12px; font-weight:600; color:var(--accent)">Platform MVP</div>
+            <div style="font-size:10px; color:var(--muted); margin-top:6px; line-height:1.5">5 engines · 4 ML models · 4-page dashboard · REST API · Adversarial loop</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div style="font-size:10px; color:var(--muted); font-weight:600; letter-spacing:1px; margin-bottom:8px; text-align:center">Q3 2026</div>
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div style="font-size:12px; font-weight:600">Streaming Mode</div>
+            <div style="font-size:10px; color:var(--muted); margin-top:6px; line-height:1.5">Kafka/Kinesis integration for real-time event streaming. Persistent baselines in TimescaleDB.</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div style="font-size:10px; color:var(--muted); font-weight:600; letter-spacing:1px; margin-bottom:8px; text-align:center">Q4 2026</div>
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div style="font-size:12px; font-weight:600">Regulator Portal</div>
+            <div style="font-size:10px; color:var(--muted); margin-top:6px; line-height:1.5">SAR filing automation · FinCEN CTR export · AMLA reporting packs · Audit-ready evidence bundles.</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div style="font-size:10px; color:var(--muted); font-weight:600; letter-spacing:1px; margin-bottom:8px; text-align:center">Q2 2027</div>
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div style="font-size:12px; font-weight:600">Crypto & DeFi</div>
+            <div style="font-size:10px; color:var(--muted); margin-top:6px; line-height:1.5">On-chain graph analysis · VASP compliance · FATF Travel Rule · Cross-chain layering detection.</div>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div style="font-size:10px; color:var(--muted); font-weight:600; letter-spacing:1px; margin-bottom:8px; text-align:center">Q4 2027</div>
+          <div class="tl-dot"></div>
+          <div class="tl-card">
+            <div style="font-size:12px; font-weight:600">Enterprise Scale</div>
+            <div style="font-size:10px; color:var(--muted); margin-top:6px; line-height:1.5">Multi-tenant SaaS · 1M+ node graph support · Geographic risk heatmaps · Custom alert rules engine.</div>
+          </div>
+        </div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="val">8,687</div>
+          <div class="lbl">Lines of production code</div>
+        </div>
+        <div class="kpi">
+          <div class="val">4</div>
+          <div class="lbl">Trained ML models</div>
+        </div>
+        <div class="kpi">
+          <div class="val">5</div>
+          <div class="lbl">Detection engines</div>
+        </div>
+        <div class="kpi">
+          <div class="val">20+</div>
+          <div class="lbl">Documentation files</div>
+        </div>
+        <div class="kpi">
+          <div class="val">2–5s</div>
+          <div class="lbl">Full pipeline latency</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════ SLIDE 15 — Call to Action ════════════════ -->
+  <div class="slide" id="s15">
+    <div style="width:100%; max-width:880px; text-align:center">
+      <div class="logo-badge" style="margin: 0 auto 24px">
+        <div class="logo-icon">🛡</div>
+        <span class="logo-text">FRAUD.GUARD</span>
+      </div>
+      <div class="eyebrow">Join the Round</div>
+      <h1 style="font-size:clamp(2rem,4.5vw,3.5rem); margin-bottom:16px">
+        The Future of <span class="highlight">Financial Crime</span> Detection is Here
+      </h1>
+      <p class="sub" style="max-width:600px; margin:0 auto 32px">
+        We've built the platform. The models are trained. The API is live. Now we scale. Help us bring FRAUD.GUARD to the institutions that need it most.
+      </p>
+      <div class="ask-boxes">
+        <div class="ask-box">
+          <h3>$2.5M</h3>
+          <p>Seed round to hire 4 engineers, fund 12 months runway, and close our first 3 enterprise pilots.</p>
+        </div>
+        <div class="ask-box" style="border-color:var(--accent)">
+          <h3 style="color:var(--accent)">Use of Funds</h3>
+          <p>40% Engineering (streaming, scale) · 30% Sales & BD · 20% Compliance & Legal · 10% Ops & Infra</p>
+        </div>
+        <div class="ask-box">
+          <h3>18 mo</h3>
+          <p>Path to first $1M ARR with 5 enterprise customers at the Professional tier.</p>
+        </div>
+      </div>
+      <div class="kpi-row" style="justify-content:center; margin-top:28px">
+        <div class="kpi" style="max-width:160px">
+          <div class="val" style="font-size:1.5rem">$15B</div>
+          <div class="lbl">TAM (2025)</div>
+        </div>
+        <div class="kpi" style="max-width:160px">
+          <div class="val" style="font-size:1.5rem">15.3%</div>
+          <div class="lbl">Market CAGR</div>
+        </div>
+        <div class="kpi" style="max-width:160px">
+          <div class="val" style="font-size:1.5rem">85%+</div>
+          <div class="lbl">Gross margin</div>
+        </div>
+        <div class="kpi" style="max-width:160px">
+          <div class="val" style="font-size:1.5rem">99.9%</div>
+          <div class="lbl">LSTM AUROC</div>
+        </div>
+      </div>
+      <div style="margin-top:32px; display:flex; gap:16px; justify-content:center; flex-wrap:wrap">
+        <button class="btn-primary" onclick="goTo(1)">↩ Replay Demo</button>
+        <button class="btn-outline" onclick="window.print()">🖨 Download Deck</button>
+      </div>
+      <p style="font-size:11px; color:var(--muted); margin-top:24px">
+        FRAUD.GUARD · AML Topology Detection Platform · Confidential — For Investor Use Only
+      </p>
+    </div>
+  </div>
+
+</div><!-- /deck -->
+
+<!-- ── Navigation Bar ──────────────────────────────────────────────── -->
+<div id="nav">
+  <button class="nav-btn" id="prevBtn" onclick="prev()">←</button>
+  <div class="dot-row" id="dots"></div>
+  <span id="slide-counter">1 / 16</span>
+  <button class="nav-btn" id="nextBtn" onclick="next()">→</button>
+</div>
+
+<script>
+// ── Slide Engine ──────────────────────────────────────────────────────
+const TOTAL = 16;
+let current = 0;
+
+function goTo(n) {
+  if (n < 0 || n >= TOTAL) return;
+  const slides = document.querySelectorAll('.slide');
+  slides[current].classList.remove('active');
+  slides[current].classList.add('out');
+  setTimeout(() => slides[current === n ? n : current].classList.remove('out'), 450);
+  current = n;
+  slides[current].classList.add('active');
+  updateNav();
+  // Trigger graph draw when graph slide shown
+  if (current === 5) setTimeout(drawGraph, 100);
+}
+
+function next() { goTo(current + 1); }
+function prev() { goTo(current - 1); }
+
+function updateNav() {
+  document.getElementById('slide-counter').textContent = `${current + 1} / ${TOTAL}`;
+  document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === current));
+}
+
+// Build dots
+const dotRow = document.getElementById('dots');
+for (let i = 0; i < TOTAL; i++) {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.onclick = () => goTo(i);
+  d.title = ['Title','Problem','Solution','Monitor','Pipeline','Graph Explorer','Account Detail','Typologies','Model Performance','Adversarial','REST API','Competitive','Market','Business Model','Roadmap','CTA'][i] || `Slide ${i+1}`;
+  dotRow.appendChild(d);
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); next(); }
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                    { e.preventDefault(); prev(); }
+});
+
+// ── Graph Visualisation ───────────────────────────────────────────────
+function drawGraph() {
+  const canvas = document.getElementById('graphCanvas');
+  const svg = document.getElementById('graphSVG');
+  if (!canvas || !svg) return;
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+
+  // Node data
+  const nodes = [
+    { id: 'ACC-023', x: 0.5, y: 0.5, tier: 'critical', size: 24, label: 'C' },
+    { id: 'ACC-041', x: 0.25, y: 0.3, tier: 'critical', size: 20, label: 'C' },
+    { id: 'ACC-007', x: 0.72, y: 0.28, tier: 'high', size: 18, label: 'H' },
+    { id: 'ACC-015', x: 0.3, y: 0.7, tier: 'high', size: 16, label: 'H' },
+    { id: 'ACC-032', x: 0.75, y: 0.65, tier: 'medium', size: 14, label: 'M' },
+    { id: 'ACC-018', x: 0.15, y: 0.55, tier: 'medium', size: 13, label: 'M' },
+    { id: 'ACC-051', x: 0.6,  y: 0.82, tier: 'low', size: 12, label: 'L' },
+    { id: 'ACC-012', x: 0.85, y: 0.45, tier: 'low', size: 11, label: 'L' },
+    { id: 'ACC-004', x: 0.4,  y: 0.15, tier: 'clean', size: 10, label: '○' },
+    { id: 'ACC-062', x: 0.88, y: 0.8,  tier: 'clean', size: 10, label: '○' },
+    { id: 'ACC-009', x: 0.1,  y: 0.2,  tier: 'clean', size: 10, label: '○' },
+    { id: 'ACC-077', x: 0.55, y: 0.35, tier: 'medium', size: 13, label: 'M' },
+  ];
+
+  const tierColor = { critical: '#FF2B2B', high: '#FF6B35', medium: '#FFB800', low: '#00FF94', clean: '#9090a0' };
+
+  // Edges
+  const edges = [
+    [0,1],[1,2],[2,0],       // cycle (layering)
+    [3,0],[5,0],[9,0],       // fan-in
+    [0,4],[0,6],[0,12-1],    // fan-out (clamp)
+    [7,2],[8,1],[10,3],[11,0]
+  ];
+
+  // Clear
+  svg.innerHTML = '';
+  canvas.querySelectorAll('.gnode').forEach(n => n.remove());
+
+  // Draw edges
+  edges.forEach(([a, b]) => {
+    if (a >= nodes.length || b >= nodes.length) return;
+    const na = nodes[a], nb = nodes[b];
+    const x1 = na.x * W, y1 = na.y * H, x2 = nb.x * W, y2 = nb.y * H;
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke', 'rgba(255,255,255,0.1)');
+    line.setAttribute('stroke-width', '1');
+    svg.appendChild(line);
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'gnode';
+    el.style.cssText = `
+      left:${n.x * W - n.size}px; top:${n.y * H - n.size}px;
+      width:${n.size*2}px; height:${n.size*2}px;
+      background:${tierColor[n.tier]}22;
+      border:2px solid ${tierColor[n.tier]};
+      color:${tierColor[n.tier]};
+      font-size:${Math.max(8, n.size - 6)}px;
+    `;
+    el.textContent = n.label;
+    el.title = n.id;
+    el.onclick = () => showNodeDetail(n, tierColor[n.tier]);
+    canvas.appendChild(el);
+  });
+}
+
+function showNodeDetail(n, color) {
+  const details = {
+    critical: { score: '0.87–0.91', signals: 'cycle_detected, fan_in, volume_acceleration', phase: 'Graph + Temporal' },
+    high:     { score: '0.62–0.75', signals: 'structuring_sequence, behavioral_shift', phase: 'Temporal + Behavioral' },
+    medium:   { score: '0.40–0.59', signals: 'temporal_concentration', phase: 'Temporal' },
+    low:      { score: '0.20–0.39', signals: 'volume_delta', phase: 'Temporal' },
+    clean:    { score: '0.00–0.19', signals: 'None', phase: '—' }
+  };
+  const d = details[n.tier] || details.clean;
+  document.getElementById('nodeDetailContent').innerHTML = `
+    <div style="color:${color}; font-weight:700; margin-bottom:8px">${n.id}</div>
+    <div style="margin-bottom:4px"><span style="color:var(--muted)">Tier: </span><span style="color:${color}">${n.tier.toUpperCase()}</span></div>
+    <div style="margin-bottom:4px"><span style="color:var(--muted)">Score: </span>${d.score}</div>
+    <div style="margin-bottom:4px"><span style="color:var(--muted)">Engine: </span>${d.phase}</div>
+    <div style="margin-top:8px; font-size:10px; color:var(--muted)">Signals: ${d.signals}</div>
+  `;
+}
+
+// Init
+updateNav();
+</script>
+</body>
+</html>

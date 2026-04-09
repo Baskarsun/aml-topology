@@ -1,42 +1,54 @@
 {
   "library": "lightgbm",
-  "timestamp": 1768210977.3634725,
-  "feature_count": 11,
+  "timestamp": 1775385757.5105095,
+  "feature_count": 21,
   "feature_names": [
     "amt_log",
+    "amt_gt_1k",
+    "amt_gt_3k",
     "mcc_enc",
     "payment_type_enc",
+    "is_crypto",
     "device_change",
     "ip_risk",
+    "ip_risk_high",
+    "ip_risk_mid",
     "count_1h",
     "sum_24h",
     "uniq_payees_24h",
+    "high_velocity",
     "is_international",
+    "is_high_risk_country",
     "avg_tx_24h",
-    "velocity_score"
+    "velocity_score",
+    "amt_x_ip_risk",
+    "high_amt_device_change",
+    "crypto_high_risk_country"
   ],
   "metrics": {
-    "accuracy": 0.9590409590409591,
-    "precision": 0.35714285711734695,
-    "recall": 0.13513513513148284,
-    "auc": 0.552932600634923
+    "accuracy": 0.87475,
+    "precision": 0.379576107899076,
+    "recall": 0.5239361702113725,
+    "f1": 0.44022346319893135,
+    "auc": 0.8548095439362284,
+    "threshold": 0.5091836734693878
   },
   "maps": {
     "mcc_map": {
       "5311": 0,
-      "7995": 1,
-      "6011": 2,
-      "4829": 3,
-      "5732": 4,
+      "5411": 1,
+      "5732": 2,
+      "7995": 3,
+      "6011": 4,
       "7011": 5,
-      "5411": 6,
+      "4829": 6,
       "4814": 7
     },
     "pay_map": {
       "card": 0,
       "wire": 1,
-      "crypto": 2,
-      "ach": 3
+      "ach": 2,
+      "crypto": 3
     }
   }
 }

@@ -1,0 +1,386 @@
+ ---
+  AML TOPOLOGY DETECTION SYSTEM — COMPLETE PIPELINE ANALYSIS
+
+  1. SYSTEM OVERVIEW
+
+  Platform: FRAUD.GUARD | AML Detection Platform
+  Stack: Streamlit (UI) · Flask (API) · PyTorch (LSTM/GNN/Sequence) · LightGBM/XGBoost (GBDT) · NetworkX (Graph) · SQLite (Persistence)
+
+  The system implements 8 detection phases that feed into a weighted risk consolidator, producing per-account risk scores surfaced through a Streamlit dashboard and REST API.
+
+  ---
+  2. PIPELINE PHASES — DETAILED ANALYSIS
+
+  Phase 1 — Graph Topology Analysis (src/graph_analyzer.py)
+
+  ┌────────────────────────────────┬──────────────────────────────────────────────────┬────────────────────────────────────┐
+  │            Detector            │                    Algorithm                     │           Key Threshold            │
+  ├────────────────────────────────┼──────────────────────────────────────────────────┼────────────────────────────────────┤
+  │ Fan-In (Structuring/Placement) │ Sliding-window temporal burst on in-degree       │ indegree ≥ 5 within 3600s          │
+  ├────────────────────────────────┼──────────────────────────────────────────────────┼────────────────────────────────────┤
+  │ Fan-Out (Integration/Payroll)  │ Sliding-window temporal burst on out-degree      │ outdegree ≥ 5 within 3600s         │
+  ├────────────────────────────────┼──────────────────────────────────────────────────┼────────────────────────────────────┤
+  │ Cycle Detection                │ SCC decomposition → elementary cycle enumeration │ max_cycle_length=8, max_cycles=200 │
+  ├────────────────────────────────┼──────────────────────────────────────────────────┼────────────────────────────────────┤
+  │ Centrality Analysis            │ Betweenness centrality on DiGraph                │ Top-10 bridge/hub nodes            │
+  └────────────────────────────────┴──────────────────────────────────────────────────┴────────────────────────────────────┘
+
+  Graph type: MultiDiGraph — edges carry amount, timestamp, type
+
+  ---
+  Phase 2 — Behavioral Detection (src/behavioral_detector.py)
+
+  9 sub-detectors:
+
+  ┌──────────────────────────┬──────────────────────────────────────────────────────┬─────────────────────────────────────────────────┐
+  │         Detector         │                        Signal                        │                 Key Parameters                  │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Credential Stuffing      │ Subnet/ASN failure ratio                             │ fail_ratio ≥ 0.8, min_attempts=30, window=3600s │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Brute Force + New Device │ Failure sequence → success + device change           │ sequence_window=300s                            │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Impossible Travel        │ Haversine velocity anomaly                           │ velocity ≥ 1000 km/h                            │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Passive Recon            │ Sensitive page visit pattern                         │ Sensitive page categories hard-coded            │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Bust-Out                 │ Rapid high-value drains                              │ amount ≥ 10000, ≥3 tx in 3600s                  │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Synthetic Identity       │ Thin-file age mismatch + piggybacking                │ history_years < 1 for accounts > 30 days old    │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Money Mule               │ Dormancy → spike → dump                              │ incoming ≥ 5000 → total outgoing                │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ Biometric Anomaly        │ Mouse straightness, keystroke uniformity, copy-paste │ Z-score deviation                               │
+  ├──────────────────────────┼──────────────────────────────────────────────────────┼─────────────────────────────────────────────────┤
+  │ APP Fraud                │ New payee country mismatch + call-during-transfer    │ Rule-based                                      │
+  └──────────────────────────┴──────────────────────────────────────────────────────┴─────────────────────────────────────────────────┘
+
+  ---
+  Phase 3 — Temporal / Predictive Analysis (src/temporal_predictor.py)
+
+  ┌──────────────────────────┬───────────────────────────────────────────────────┬───────────────────────────────┐
+  │         Detector         │                      Method                       │           Threshold           │
+  ├──────────────────────────┼───────────────────────────────────────────────────┼───────────────────────────────┤
+  │ Volume Acceleration      │ Rolling daily average, z-score                    │ acceleration_rate > 0.3 (30%) │
+  ├──────────────────────────┼───────────────────────────────────────────────────┼───────────────────────────────┤
+  │ Behavioral Shift         │ Per-metric z-score (amount, frequency, diversity) │ z ≥ 2.0 σ                     │
+  ├──────────────────────────┼───────────────────────────────────────────────────┼───────────────────────────────┤
+  │ Risk Escalation Forecast │ Multi-signal aggregation                          │ risk_prob ≥ 0.6 early warning │
+  ├──────────────────────────┼───────────────────────────────────────────────────┼───────────────────────────────┤
+  │ Temporal Concentration   │ Burst clustering per 24h window                   │ ≥ 4 tx in 24h                 │
+  ├──────────────────────────┼───────────────────────────────────────────────────┼───────────────────────────────┤
+  │ Cycle Emergence          │ Transaction chain analysis                        │ chain_length ≥ 3              │
+  ├──────────────────────────┼───────────────────────────────────────────────────┼───────────────────────────────┤
+  │ Structuring Sequence     │ Amount just-below-threshold detection             │ 9000 ≤ amount < 10000         │
+  └──────────────────────────┴───────────────────────────────────────────────────┴───────────────────────────────┘
+
+  ---
+  Phase 4 — LSTM Link Prediction (src/lstm_link_predictor.py)
+
+  Architecture:
+  (N, seq_len=3, features)  →  LSTM(hidden=64, layers=1, dropout=0.1)
+                             →  FC(hidden → 1)
+                             →  Sigmoid → binary link probability
+
+  Node Embeddings (src/embedding_builder.py):
+  - Static (7 dims): in/out/total-degree, PageRank, clustering coefficient, reciprocal count, unique counterparties
+  - Dynamic per 12h bucket (13 dims): tx count in/out, total/avg/median/std amount in/out, unique targets, time-since-last-tx
+  - Fraud score (1 dim): Historical flag
+
+  Training: BCEWithLogitsLoss + Adam (lr=1e-3), pos_weight for class imbalance, 15 epochs, 10% val split
+
+  Output: Top-10 emerging suspicious links + probability scores
+
+  ---
+  Phase 5 — GBDT Transaction Scorer (src/gbdt_detector.py)
+
+  Backend: LightGBM (primary), XGBoost / CatBoost (fallback)
+
+  Feature Set (12 features):
+  - amount, mcc, payment_type, country
+  - device_change (bool), ip_risk (float 0–1)
+  - count_1h (velocity), sum_24h, unique_payees_24h
+  - Derived risk rules: amount > 10000 AND device_change, payment_type='crypto' AND amount > 5000
+
+  Training: 20,000 synthetic samples, fraud_rate=3%
+  Persistence: models/lgb_model.txt
+
+  ---
+  Phase 6 — Sequence Detector (src/sequence_detector.py)
+
+  Two model variants:
+
+  ┌─────────────┬──────────────────────────────────────────────────────────────────────────┬──────────────────────┐
+  │    Model    │                               Architecture                               │      Key Params      │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────┼──────────────────────┤
+  │ LSTM        │ Event embed(32) + scalar projection → LSTM(64) → 2-layer FC              │ dropout, batch_first │
+  ├─────────────┼──────────────────────────────────────────────────────────────────────────┼──────────────────────┤
+  │ Transformer │ Event embed(32) → MultiheadAttn(nhead=4, nlayers=2) → adaptive pool → FC │ —                    │
+  └─────────────┴──────────────────────────────────────────────────────────────────────────┴──────────────────────┘
+
+  Event vocabulary (9 types): login_success, login_failed, password_change, add_payee, navigate_help, view_account, transfer, max_transfer, logout
+
+  Fraud pattern: login_failed×N → password_change → add_payee → max_transfer
+  Fraud rate in synthetic data: 12%
+
+  ---
+  Phase 7 — GNN Node Classification (src/gnn_trainer.py)
+
+  Purpose: Graph-structural node embeddings for mule/fraud label classification
+
+  Injected patterns for training:
+  - Mule hubs (80 in-edges + 30 out-edges)
+  - Synthetic identities (thin file + bust-out)
+  - APP fraud (payee mismatch)
+  - Smurfing rings (temporal cycles)
+
+  Adversarial Robustness (src/adversarial_agent.py):
+  - PPO agent generates evasion patterns (peel chains, smurfing, funnels, mule networks)
+  - Continuous action space: peel %, wash intensity, cycle probability (Beta distributions)
+  - State: 49-dim (32 graph embedding + 12 node features + 5 detection history)
+
+  ---
+  Phase 8 — Risk Consolidation (src/risk_consolidator.py)
+
+  Weighted aggregation:
+
+  ┌─────────────────┬────────┬───────────────────────────────────────────────────────┐
+  │      Phase      │ Weight │                   Signals Included                    │
+  ├─────────────────┼────────┼───────────────────────────────────────────────────────┤
+  │ Spatial (Graph) │ 0.20   │ Cycles, fan-in/out, centrality                        │
+  ├─────────────────┼────────┼───────────────────────────────────────────────────────┤
+  │ Behavioral      │ 0.10   │ Cyber alerts                                          │
+  ├─────────────────┼────────┼───────────────────────────────────────────────────────┤
+  │ Temporal        │ 0.35   │ Volume acceleration, behavioral shifts, concentration │
+  ├─────────────────┼────────┼───────────────────────────────────────────────────────┤
+  │ LSTM            │ 0.25   │ Emerging link probabilities                           │
+  ├─────────────────┼────────┼───────────────────────────────────────────────────────┤
+  │ Cyber           │ 0.10   │ Secondary behavioral signals                          │
+  └─────────────────┴────────┴───────────────────────────────────────────────────────┘
+
+  Risk Tiers:
+  - CRITICAL / HIGH: score > 0.7
+  - MEDIUM: 0.4–0.7
+  - LOW: < 0.4
+  - CLEAN: 0.0
+
+  Output per account: { spatial_score, behavioral_score, temporal_score, lstm_score, final_risk_score, risk_rank, signals[], signal_count }
+
+  ---
+  3. INFRASTRUCTURE
+
+  ┌───────────────────┬────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
+  │     Component     │                     Technology                     │                                          Notes                                          │
+  ├───────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ REST API          │ Flask (src/inference_api.py)                       │ 5 endpoints: /health, /score/transaction, /score/sequence, /predict/links, /consolidate │
+  ├───────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Metrics Logging   │ SQLite (src/metrics_logger.py)                     │ inference_logs, engine_stats, kpi_aggregates, link_predictions — thread-safe            │
+  ├───────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Alert Management  │ SQLite (src/alert_store.py)                        │ States: Unreviewed → Investigating → False Positive → Escalated                         │
+  ├───────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Embedding Cache   │ Redis + file fallback (src/gnn_embedding_cache.py) │ models/gnn_embeddings_cache.json                                                        │
+  ├───────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Model Persistence │ File-based                                         │ .pt (PyTorch), .txt (LightGBM), .json (metadata + config)                               │
+  └───────────────────┴────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
+
+  ---
+  4. MISSING / GAP ANALYSIS
+
+  4.1 Feature Gaps in ML Models
+
+  ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────┬───────────────────────────────────────┐
+  │                                                    Gap                                                     │          Location          │                Impact                 │
+  ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼───────────────────────────────────────┤
+  │ GBDT has only 12 features — missing temporal velocity features like avg_amount_7d,                         │ src/gbdt_detector.py       │ Moderate — reduces recall on          │
+  │ amount_deviation_from_account_baseline, days_since_account_open                                            │                            │ dormant-account fraud                 │
+  ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼───────────────────────────────────────┤
+  │ GBDT missing network features — no graph-derived features (degree, centrality, cycle membership) fed into  │ src/gbdt_detector.py       │ High — cross-phase signals not        │
+  │ the tabular model                                                                                          │                            │ exploited                             │
+  ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼───────────────────────────────────────┤
+  │ LSTM seq_len=3 is very short — only 3 time-buckets (36 hours at 12H freq) of history. Layering schemes can │ src/lstm_link_predictor.py │ High — misses slow-burn layering      │
+  │  span weeks                                                                                                │                            │ patterns                              │
+  ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼───────────────────────────────────────┤
+  │ Static embedding has no amount_std / amount_entropy — amount distribution shape is a strong typology       │ src/embedding_builder.py   │ Moderate                              │
+  │ signal                                                                                                     │                            │                                       │
+  ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼───────────────────────────────────────┤
+  │ GNN node features not described / enumerated — unclear what exactly feeds into the GNN beyond structural   │ src/gnn_trainer.py         │ High — makes GNN opaque and hard to   │
+  │ topology                                                                                                   │                            │ audit                                 │
+  ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼───────────────────────────────────────┤
+  │ No address/IP-based features in GBDT — ip_risk is a single float with no breakdown (ASN, geolocation,      │ src/gbdt_detector.py       │ Moderate                              │
+  │ VPN/proxy)                                                                                                 │                            │                                       │
+  ├────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼───────────────────────────────────────┤
+  │ Sequence Detector has only 9 event types — missing events like 2fa_bypass, limit_change, beneficiary_edit, │ src/sequence_detector.py   │ Moderate — real fraud sequences are   │
+  │  document_upload                                                                                           │                            │ longer                                │
+  └────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────┴───────────────────────────────────────┘
+
+  ---
+  4.2 Missing Detection Typologies
+
+  ┌─────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────┐
+  │          Missing Typology           │                                           Description                                           │   Industry Standard?   │
+  ├─────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────┤
+  │ Trade-Based Money Laundering (TBML) │ Over/under-invoicing, commodity mispricing                                                      │ Yes — FATF guidance    │
+  ├─────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────┤
+  │ Real Estate Layering                │ Multiple property transactions to obscure origin                                                │ Yes                    │
+  ├─────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────┤
+  │ Shell Company Detection             │ Identifying dormant companies in transaction chains                                             │ Yes                    │
+  ├─────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────┤
+  │ Peer-to-Peer (P2P) Smurfing         │ Micro-transactions across many P2P rails below thresholds                                       │ Yes                    │
+  ├─────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────┤
+  │ Cryptocurrency Mixing               │ Tumbler/mixer patterns — only crypto payment type flagged                                       │ Partial                │
+  ├─────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────┤
+  │ Refund Fraud / Return Abuse         │ Repeated refund cycles as laundering mechanism                                                  │ Niche                  │
+  ├─────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────┤
+  │ Wire Layering Detection             │ Rapid international wire chains via correspondent banks                                         │ Yes — SWIFT monitoring │
+  ├─────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────┤
+  │ Threshold Avoidance (CTR evasion)   │ Structuring currently uses a single static 9000–10000 band but misses multi-account aggregation │ Yes                    │
+  └─────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────┘
+
+  ---
+  4.3 Architectural / Pipeline Gaps
+
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬───────────────────────────────────────┐
+  │                                                                   Gap                                                                   │                Impact                 │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ No cross-account aggregation in structuring detection — structuring checked per-account in isolation; real structuring splits across    │ High — key regulatory blind spot      │
+  │ multiple coordinated accounts                                                                                                           │                                       │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ No entity resolution — different account IDs for the same real-world entity are not linked (same phone, same address, same device       │ High — smurfs use many accounts       │
+  │ fingerprint)                                                                                                                            │                                       │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ GBDT phase score absent from consolidator — src/risk_consolidator.py aggregates spatial + behavioral + temporal + LSTM + cyber, but     │ Critical — two phases produce scores  │
+  │ GBDT and Sequence Detector scores are not included in the final weighted sum                                                            │ that are dropped                      │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ GNN phase score absent from consolidator — GNN node classification output is not explicitly wired into the consolidation weights        │ Critical                              │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ No feedback loop / active learning — confirmed fraud labels from alert resolution (alert_store) are not used to retrain models          │ High                                  │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ Adversarial training not connected to main pipeline — adversarial_agent.py and adversarial_env.py exist but there's no evidence they    │ Moderate                              │
+  │ are called during training or evaluation                                                                                                │                                       │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ Phase weights are static — {spatial:0.20, behavioral:0.10, temporal:0.35, lstm:0.25, cyber:0.10} are hardcoded with no adaptive         │ Moderate                              │
+  │ mechanism                                                                                                                               │                                       │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ No explainability layer (XAI) — SHAP/LIME values not generated for any model; investigators see signals but not feature attribution     │ High — regulatory requirement in many │
+  │                                                                                                                                         │  jurisdictions                        │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ Embedding time bucket is 12H but not configurable at runtime — changing the temporal resolution requires code changes                   │ Low                                   │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ No SAR (Suspicious Activity Report) generation — alert escalation exists but no export to FinCEN/FINTRAC/AUSTRAC format                 │ High — core compliance output missing │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────┤
+  │ No case management integration — alert states in SQLite but no workflow engine (assignment, SLA, audit trail)                           │ Moderate                              │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────┘
+
+  ---
+  4.4 Data Quality & Simulation Gaps
+
+  ┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─────────────────────────────────────┐
+  │                                                                    Gap                                                                    │               Impact                │
+  ├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────┤
+  │ Simulator injects only 3 typologies (fan-in, fan-out, cycle) — GBDT and Sequence models train on very different synthetic distributions   │ Training/evaluation distribution    │
+  │ than what the graph simulator produces                                                                                                    │ mismatch                            │
+  ├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────┤
+  │ No concept drift simulation — adversarial agent generates evasion patterns but the base simulator doesn't evolve over time                │ Moderate                            │
+  ├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────┤
+  │ Synthetic biometric data not validated against real distributions — mouse straightness and keystroke uniformity are simplistic            │ Moderate                            │
+  ├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────────────┤
+  │ No missing-data handling — most detectors assume complete feature vectors; real-world data has nulls                                      │ High — production fragility         │
+  └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────────┘
+
+  ---
+  4.5 Operational / Production Gaps
+
+  ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─────────────────────────┐
+  │                                                                 Gap                                                                 │         Impact          │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────┤
+  │ No model versioning — .pt / .txt files are overwritten on retrain; no rollback mechanism                                            │ High                    │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────┤
+  │ No data drift monitoring — feature distributions not tracked; a model trained on 2024 data may degrade silently                     │ High                    │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────┤
+  │ Redis cache has no TTL on embeddings — stale graph embeddings will persist indefinitely if a node's topology changes                │ Moderate                │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────┤
+  │ Inference API lacks authentication / rate limiting — endpoints are open                                                             │ High — security concern │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────┤
+  │ No batch inference pipeline — only real-time single-record scoring via API; bulk scoring for SAR review requires repeated API calls │ Moderate                │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────┤
+  │ Alert SLA / ageing not tracked — alert_store captures state but not time-in-state                                                   │ Moderate                │
+  ├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────┤
+  │ SQLite for metrics is single-writer — thread lock exists but will bottleneck under high-throughput inference                        │ Low-Moderate            │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────┘
+
+  ---
+  5. RISK WEIGHT OBSERVATIONS
+
+  The current consolidation weights assign temporal signals 35% of total risk weight — the highest of any phase. This is intentional for catching acceleration patterns early, but it
+  has a side effect: GBDT transaction-level scores and GNN embeddings are completely absent from the consolidator, meaning two of the eight pipeline phases contribute zero weight to
+  the final risk score.
+
+  Current effective weights (what actually reaches final score):
+    Spatial  (Graph)    20%
+    Behavioral          10%
+    Temporal            35%
+    LSTM                25%
+    Cyber               10%
+    GBDT                 0%  ← missing
+    GNN                  0%  ← missing
+    Sequence             0%  ← missing
+
+  ---
+  6. SUMMARY TABLE
+
+  ┌─────────────────────────────────┬────────────────────────────────────────────────────┐
+  │            Category             │                       Status                       │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Graph topology detection        │ Complete                                           │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Behavioral / cyber detection    │ Complete                                           │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Temporal forecasting            │ Complete                                           │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ LSTM link prediction            │ Complete                                           │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ GBDT transaction scoring        │ Complete (disconnected from consolidator)          │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Sequence anomaly detection      │ Complete (disconnected from consolidator)          │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ GNN node classification         │ Partially complete (features opaque, disconnected) │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Adversarial robustness training │ Built but not wired                                │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Risk consolidation              │ Incomplete — missing 3 phases                      │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Explainability (SHAP/LIME)      │ Missing                                            │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ SAR report generation           │ Missing                                            │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Entity resolution               │ Missing                                            │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Cross-account structuring       │ Missing                                            │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Model versioning                │ Missing                                            │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Data drift monitoring           │ Missing                                            │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Feedback / retraining loop      │ Missing                                            │
+  ├─────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ API authentication              │ Missing                                            │
+  └─────────────────────────────────┴────────────────────────────────────────────────────┘
+
+  ---
+  7. PRIORITY RECOMMENDATIONS
+
+  Critical (fix breaks the pipeline today):
+  1. Wire GBDT, Sequence Detector, and GNN scores into risk_consolidator.py with explicit weights
+  2. Add cross-account structuring aggregation to temporal predictor
+
+  High (regulatory / operational risk):
+  3. Implement SAR export (FinCEN XML / CSV format)
+  4. Add SHAP explainability to GBDT and post-hoc attention visualization for LSTM/Transformer
+  5. Implement entity resolution to link accounts by device fingerprint, IP, phone
+  6. Add API authentication (JWT or API key) to inference_api.py
+
+  Moderate (model quality):
+  7. Extend LSTM seq_len from 3 → 10+ buckets (cover weekly layering windows)
+  8. Feed GNN-derived features (degree, cycle membership, centrality) into GBDT feature set
+  9. Connect adversarial training loop to GNN retraining pipeline
+  10. Add model versioning (timestamp-stamped checkpoint directory)
+
